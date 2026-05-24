@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+temp_git_builds/
+temp_git_scans/
+worker-*.err
+worker-*.log
+logs/
+.DS_Store

@@ -1,0 +1,67 @@
+networks:
+  kubex-net:
+    driver: bridge
+
+volumes:
+  mongo-data:
+
+services:
+  # ─── MongoDB ─────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: kubex-mongodb
+    restart: unless-stopped
+    networks:
+      - kubex-net
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Control Plane API Server ─────────────────────────────────────────────
+  api-server:
+    build:
+      context: ./control-plane/api-server
+      dockerfile: Dockerfile
+    container_name: kubex-api-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    networks:
+      - kubex-net
+    environment:
+      PORT: 3001
+      MONGO_URI: mongodb://mongodb:27017/kubex
+      # Windows Docker Desktop TCP access to Docker daemon
+      DOCKER_HOST: tcp://host.docker.internal:2375
+      RECONCILER_INTERVAL_MS: 5000
+      AUTOSCALER_INTERVAL_MS: 10000
+      HEARTBEAT_TIMEOUT_MS: 15000
+      CPU_SCALE_UP_THRESHOLD: 80
+      CPU_SCALE_DOWN_THRESHOLD: 20
+      NODE_ENV: production
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    # If on Linux with socket access, uncomment below and remove DOCKER_HOST above:
+    # volumes:
+    #   - /var/run/docker.sock:/var/run/docker.sock
+
+  # ─── Frontend (React + Nginx) ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kubex-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    networks:
+      - kubex-net
+    depends_on:
+      - api-server

@@ -1,0 +1,3 @@
+{
+  "ignore": ["logs/*", "temp_git_builds/*", "temp_git_scans/*"]
+}

@@ -1,0 +1,66 @@
+/**
+ * @file Node.js — Mongoose model for a KUBEX Worker Node.
+ *
+ * A Node record is created/updated automatically whenever a worker agent
+ * sends a heartbeat to POST /api/heartbeat.
+ *
+ * The FailureDetector checks lastHeartbeat periodically. If a node hasn't
+ * sent a heartbeat within HEARTBEAT_TIMEOUT_MS, it is marked "NotReady"
+ * and its containers are rescheduled to healthy nodes.
+ *
+ * The SchedulerService reads Node.metrics to find the best node for placing
+ * a new container (least-loaded strategy).
+ */
+const mongoose = require('mongoose');
+
+const nodeSchema = new mongoose.Schema(
+    {
+        // Unique identifier for this worker (e.g. "worker-1", "worker-2").
+        // Set via NODE_ID env var in the worker agent process.
+        nodeId: { type: String, required: true, unique: true },
+
+        // HTTP address of the worker agent REST API (e.g. "http://localhost:4001").
+        // Used by the frontend to send chaos commands directly to the agent.
+        address: { type: String, required: true },
+
+        // Health status updated by FailureDetector:
+        //   Ready    — heartbeat is current, node can receive containers
+        //   NotReady — heartbeat expired, node is considered down
+        //   Unknown  — initial state before first heartbeat
+        status: {
+            type: String,
+            enum: ['Ready', 'NotReady', 'Unknown'],
+            default: 'Unknown',
+        },
+
+        // Static capacity of the machine (reported by the worker agent).
+        capacity: {
+            cpu: { type: Number, default: 4 },    // Total CPU cores on the machine
+            memory: { type: Number, default: 4096 }, // Total RAM in MB
+        },
+
+        // Live resource metrics reported with every heartbeat.
+        // cpuUsage / memUsage are percentages (0–100), calculated by MetricsCollector
+        // with density-aware virtualization (containers add simulated load).
+        metrics: {
+            cpuUsage: { type: Number, default: 0 },  // % of CPU in use (0–100)
+            memUsage: { type: Number, default: 0 },  // % of RAM in use (0–100)
+            containerCount: { type: Number, default: 0 },  // Number of KUBEX containers running
+        },
+
+        // List of Docker container IDs running on this node (short form).
+        // Synced from the worker agent's ContainerRunner on each heartbeat.
+        containers: [{ type: String }],
+
+        // Timestamp of the most recent heartbeat received from this node.
+        // null if the node has never sent a heartbeat.
+        lastHeartbeat: { type: Date, default: null },
+
+        // Process ID (PID) — only populated if the worker was spawned 
+        // by this API server instance on the local machine.
+        pid: { type: Number, default: null },
+    },
+    { timestamps: true } // Adds createdAt and updatedAt automatically
+);
+
+module.exports = mongoose.model('Node', nodeSchema);
