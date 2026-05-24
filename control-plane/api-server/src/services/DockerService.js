@@ -578,7 +578,7 @@ async function ensureGuiContainer(dbRecord) {
             await new Promise(r => setTimeout(r, 1000));
             await docker.getContainer(guiName).restart();
             
-            console.log(`[Docker] Injected KUBEX Premium Dark Mode into ${guiName} and restarted`);
+            console.log(`[Docker] Injected KUBEX Classy Light Mode into ${guiName} and restarted`);
         } catch (themeErr) {
             console.error(`[Docker] Failed to inject theme:`, themeErr.message);
         }
