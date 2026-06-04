@@ -128,7 +128,11 @@ export default function Databases() {
                                     <span className={`badge badge-${db.status === 'Running' ? 'green' : 'yellow'}`}>
                                         {db.status}
                                     </span>
-                                    <button className="btn btn-secondary" onClick={() => window.open(`http://localhost:3001/api/databases/${db._id}/gui/?token=${localStorage.getItem('kubex_token')}`, '_blank')} style={{ padding: '6px 12px' }}>
+                                    <button className="btn btn-secondary" onClick={() => {
+                                        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+                                        const guiUrl = apiBase.replace('/api', '') + `/api/databases/${db._id}/gui/?token=${localStorage.getItem('kubex_token')}`;
+                                        window.open(guiUrl, '_blank');
+                                    }} style={{ padding: '6px 12px' }}>
                                         Open Studio
                                     </button>
                                     {db.owner === currentUser._id && (

@@ -97,6 +97,12 @@ export const scaleDeployment = (id, replicas) => API.put(`/deployments/${id}/sca
  */
 export const patchDeployment = (id, data) => API.patch(`/deployments/${id}`, data);
 
+/** POST /deployments/:id/domains — add a custom domain */
+export const addCustomDomain = (id, domain) => API.post(`/deployments/${id}/domains`, { domain });
+
+/** DELETE /deployments/:id/domains/:domain — remove a custom domain */
+export const removeCustomDomain = (id, domain) => API.delete(`/deployments/${id}/domains/${domain}`);
+
 /** DELETE /deployments/:id — terminate a deployment and remove all its containers */
 export const deleteDeployment = (id) => API.delete(`/deployments/${id}`);
 
@@ -158,8 +164,8 @@ export const getLogs = (id) => API.get(`/logs/${id}`);
 
 // ─── Workers ──────────────────────────────────────────────────────────────────
 
-/** POST /workers/spawn — triggers the API server to spawn a new worker process locally */
-export const spawnWorker = () => API.post('/workers/spawn');
+/** POST /workers/provision — triggers the API server to spawn a new worker process locally */
+export const spawnWorker = () => API.post('/workers/provision');
 
 /** GET /system/images — list all local docker images */
 export const getImages = () => API.get('/system/images');

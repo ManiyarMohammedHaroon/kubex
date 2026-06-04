@@ -28,14 +28,14 @@ const nodesRouter = require('./routes/nodes');
 const clusterRouter = require('./routes/cluster');
 const logsRouter = require('./routes/logs');
 const workersRouter = require('./routes/workers');
-const gatewayRouter = require('./routes/gateway');
+
 const systemRouter = require('./routes/system');
 const authRouter = require('./routes/auth');
 const webhooksRouter = require('./routes/webhooks');
 const databasesRouter = require('./routes/databases');
 
 // ── Background services (started after DB connects) ───────────────────────────
-const ReconcilerService = require('./services/ReconcilerService');
+
 const AutoScalerService = require('./services/AutoScalerService');
 const FailureDetector = require('./services/FailureDetector');
 const HealthCheckService = require('./services/HealthCheckService');
@@ -53,7 +53,7 @@ const logStream = fs.createWriteStream(path.join(logsDir, 'api-server.log'), { f
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors());                             // Allow cross-origin requests from the React frontend
-app.use('/gate', gatewayRouter);             // Dynamic Service Gateway (Proxy) - BEFORE body parser
+
 app.use(express.json({ limit: '1mb' }));    // Parse JSON bodies; cap size to prevent abuse
 
 // Custom Morgan configuration: Silences the high-frequency polling/heartbeat noise
@@ -138,10 +138,6 @@ async function bootstrap() {
             const WorkerService = require('./services/WorkerService');
             await WorkerService.stopAllWorkers();
 
-            // 2. Delete all existing nodes since we are starting a fresh cluster session.
-            await Node.deleteMany({});
-            console.log('[DB] Cleared old node records.');
-
             // 3. Check for TRULY active nodes (heartbeat in last 5 seconds)
             const activeNodeCount = await Node.countDocuments({
                 lastHeartbeat: { $gt: new Date(Date.now() - 5000) }
@@ -161,7 +157,7 @@ async function bootstrap() {
         // Bug 15 fix: start background services INSIDE the listen callback, not after it.
         // app.listen() is asynchronous; calling .start() synchronously after it means
         // the services begin before the server is confirmed to be listening.
-        ReconcilerService.start();  // Desired-state reconciliation loop (every 5 s)
+
         AutoScalerService.start();  // CPU-based autoscaling loop (every 10 s)
         FailureDetector.start();    // Heartbeat timeout / node failure detection (every 5 s)
         HealthCheckService.start(); // Application L7 HTTP Health Checking (every 10 s)
@@ -188,7 +184,7 @@ process.on('uncaughtException', (err) => {
 // Graceful shutdown: stop background loops before exiting
 const shutdown = async () => {
     console.log('\n[Process] Shutting down KUBEX API Server...');
-    ReconcilerService.stop();
+
     AutoScalerService.stop();
     FailureDetector.stop();
     HealthCheckService.stop();

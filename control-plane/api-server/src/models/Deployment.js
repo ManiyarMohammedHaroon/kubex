@@ -58,6 +58,12 @@ const deploymentSchema = new mongoose.Schema(
         // Stored as an array of { key, value } pairs and converted to "KEY=VALUE" strings
         envVars: [{ key: String, value: String }],
 
+        // Global Edge Routing Fields (Phase 2)
+        // Automatically generated preview link (e.g. preview-expensestracker.kubex.dev)
+        previewDomain: { type: String, default: '' },
+        // User-attached custom domains (e.g. expensestracker.com)
+        customDomains: [{ type: String }],
+
         // OPTIONAL: Specify a fixed host port to map to container port.
         // If provided, the FIRST replica will attempt to bind to this port.
         staticHostPort: { type: String, default: '' },

@@ -150,3 +150,8 @@ app.listen(PORT, () => {
 
 // Start sending heartbeats to the API server immediately after the HTTP server is up
 HeartbeatService.start();
+
+const Reconciler = require('./Reconciler');
+setInterval(() => Reconciler.reconcile().catch(console.error), 5000);
+Reconciler.reconcile().catch(console.error); // trigger immediately
+

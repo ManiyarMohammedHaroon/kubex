@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: kubex-api-server
+    env: node
+    rootDir: control-plane/api-server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false # Requires manual entry in Render dashboard
+      - key: KUBEX_JWT_SECRET
+        sync: false # Requires manual entry in Render dashboard
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false

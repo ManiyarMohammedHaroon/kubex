@@ -18,7 +18,7 @@
  */
 const router = require('express').Router();
 const Deployment = require('../models/Deployment');
-const DockerService = require('../services/DockerService');
+
 
 // ─── GET /api/logs/:deploymentId ─────────────────────────────────────────────
 // Fetches the last 200 log lines from EVERY running container of the given
@@ -34,10 +34,7 @@ router.get('/:deploymentId', async (req, res) => {
         const dep = await Deployment.findById(req.params.deploymentId);
         if (!dep) return res.status(404).json({ success: false, error: 'Deployment not found' });
 
-        // Find all Docker containers tagged with this deployment's name label
-        const containers = await DockerService.listContainersByLabel({
-            'kubex.deployment': dep.name,
-        });
+        const containers = dep.containers || [];
         
         // Fetch node addresses for all involved nodes
         const Node = require('../models/Node');
@@ -52,6 +49,8 @@ router.get('/:deploymentId', async (req, res) => {
                 
                 if (nodeAddress) {
                     try {
+                        // This might fail if the worker is behind a NAT. In a true Pull Architecture,
+                        // logs would be pushed or requested via a persistent WebSocket.
                         const response = await fetch(`${nodeAddress}/logs/${c.containerId}?tail=200`);
                         const result = await response.json();
                         logs = result.data || result.error || 'No logs found';
@@ -59,8 +58,7 @@ router.get('/:deploymentId', async (req, res) => {
                         logs = `[Error reaching worker ${c.nodeId}: ${err.message}]`;
                     }
                 } else {
-                    // Fallback to local Docker if node address is unknown (e.g. local-mode)
-                    logs = await DockerService.getContainerLogs(c.containerId, 200);
+                    logs = '[Log fetching not supported in Pull Architecture without persistent tunnel]';
                 }
 
                 return {
@@ -109,11 +107,11 @@ router.get('/:deploymentId/:containerId', async (req, res) => {
                     logs = `[Error reaching worker ${containerInfo.nodeId}: ${err.message}]`;
                 }
             } else {
-                logs = await DockerService.getContainerLogs(containerId, 500);
+                logs = '[Log fetching not supported in Pull Architecture without persistent tunnel]';
             }
         } else {
             // Fallback for untracked containers
-            logs = await DockerService.getContainerLogs(containerId, 500);
+            logs = '[Log fetching not supported in Pull Architecture without persistent tunnel]';
         }
 
         res.json({ success: true, data: { containerId, logs } });

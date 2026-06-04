@@ -30,6 +30,7 @@ import {
     deleteDeployment, patchDeployment, rebalanceDeployment,
     redeployDeployment, getBuildLogs, shareDeployment, revokeDeploymentAccess
 } from '../api/client';
+import CustomDomainModal from '../components/CustomDomainModal';
 
 /**
  * Map deployment status strings to CSS badge colour modifier classes.
@@ -466,6 +467,7 @@ export default function Deployments() {
     const [error, setError] = useState(null);
     const [showCreate, setShowCreate] = useState(false); // Controls CreateModal visibility
     const [scaleTarget, setScaleTarget] = useState(null);  // The deployment being scaled (or null)
+    const [domainModalDep, setDomainModalDep] = useState(null); // The deployment being managed (or null)
     const [buildLogsTarget, setBuildLogsTarget] = useState(null); // The deployment whose build logs are being viewed
     const [shareModalDep, setShareModalDep] = useState(null);
     const [shareEmail, setShareEmail] = useState('');
@@ -622,6 +624,9 @@ export default function Deployments() {
                                         {dep.owner !== user?._id && (
                                             <span className="badge badge-purple" style={{ marginLeft: 10, fontSize: 10 }}>Managed for You</span>
                                         )}
+                                        <span className="badge badge-green" style={{ marginLeft: dep.owner !== user?._id ? 6 : 10, fontSize: 9, background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)', border: '1px solid rgba(16, 185, 129, 0.2)' }} title="This deployment runs in an isolated Virtual Private Cloud Docker network">
+                                            Namespace: {String(dep.owner).slice(0, 8)}
+                                        </span>
                                     </span>
                                     <span className="deployment-image">{dep.image}</span>
                                     {dep.gitRepository && (
@@ -668,28 +673,22 @@ export default function Deployments() {
                             <div className="detail-section">
                                 <div className="endpoint-grid">
                                     <div className="gateway-urls" style={{ width: '100%', marginBottom: 12 }}>
-                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Access via Gateway:</div>
+                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Live Public URL (Auto-Tunnel):</div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                            <a
-                                                href={`http://localhost:3001/gate/${dep.name}/`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="endpoint-link gateway-link"
-                                                style={{ width: '100%', justifyContent: 'flex-start', background: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.2)' }}
-                                            >
-                                                <span style={{ color: 'var(--accent-blue)', marginRight: 6 }}>🌐</span>
-                                                <span style={{ fontSize: 11 }}>localhost:3001/gate/{dep.name}</span>
-                                            </a>
-                                            <a
-                                                href={`http://${dep.name}.localhost:3001/`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="endpoint-link gateway-link"
-                                                style={{ width: '100%', justifyContent: 'flex-start', background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}
-                                            >
-                                                <span style={{ color: 'var(--accent-green)', marginRight: 6 }}>🚀</span>
-                                                <span style={{ fontSize: 11 }}>{dep.name}.localhost:3001</span>
-                                            </a>
+                                            {dep.tunnelUrl ? (
+                                                <a
+                                                    href={dep.tunnelUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="endpoint-link gateway-link"
+                                                    style={{ width: '100%', justifyContent: 'flex-start', background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}
+                                                >
+                                                    <span style={{ color: 'var(--accent-green)', marginRight: 6 }}>🚀</span>
+                                                    <span style={{ fontSize: 11 }}>{dep.tunnelUrl.replace('https://', '')}</span>
+                                                </a>
+                                            ) : (
+                                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Tunnel generating...</div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -744,21 +743,24 @@ export default function Deployments() {
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {user?.role !== 'viewer' && (
                                         <>
-                                            <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => setScaleTarget(dep)}>
+                                            <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setScaleTarget(dep)}>
                                                 ⚖ Scale
                                             </button>
-                                            <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }} title="Redistribute containers across nodes" onClick={() => handleRebalance(dep._id, dep.name)}>
+                                            <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} title="Redistribute containers across nodes" onClick={() => handleRebalance(dep._id, dep.name)}>
                                                 🔄 Rebalance
                                             </button>
-                                            <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => setShareModalDep(dep)}>
+                                            <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setShareModalDep(dep)}>
                                                 Share
+                                            </button>
+                                            <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px', background: 'var(--bg-primary)' }} onClick={() => setDomainModalDep(dep)}>
+                                                Manage Domains
                                             </button>
                                         </>
                                     )}
                                     {dep.gitRepository && (
                                         <button 
                                             className="btn btn-secondary btn-sm" 
-                                            style={{ padding: '4px 8px', fontSize: '11px' }}
+                                            style={{ padding: '6px 12px', fontSize: '12px' }}
                                             title="View Git & Docker Build Logs"
                                             onClick={() => setBuildLogsTarget(dep)}
                                         >
@@ -768,7 +770,7 @@ export default function Deployments() {
                                     {dep.gitRepository && user?.role !== 'viewer' && (
                                         <button 
                                             className="btn btn-primary btn-sm" 
-                                            style={{ padding: '4px 8px', fontSize: '11px', background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
+                                            style={{ padding: '6px 12px', fontSize: '12px', background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
                                             title={`Re-deploy from Git branch: ${dep.gitBranch}`}
                                             onClick={() => handleRedeploy(dep._id, dep.name, dep.gitRepository)}
                                             disabled={dep.status === 'Building'}
@@ -777,7 +779,7 @@ export default function Deployments() {
                                         </button>
                                     )}
                                     {user?.role !== 'viewer' && (
-                                        <button className="btn btn-danger btn-sm" style={{ padding: '4px 8px' }} onClick={() => handleDelete(dep._id, dep.name)}>
+                                        <button className="btn btn-danger btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleDelete(dep._id, dep.name)}>
                                             🗑
                                         </button>
                                     )}
@@ -856,6 +858,13 @@ export default function Deployments() {
                         </div>
                     </div>
                 </div>
+            )}
+            {domainModalDep && (
+                <CustomDomainModal 
+                    deployment={domainModalDep} 
+                    onClose={() => setDomainModalDep(null)} 
+                    onRefresh={fetchDeps} 
+                />
             )}
         </div>
     );

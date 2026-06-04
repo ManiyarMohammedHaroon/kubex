@@ -63,20 +63,25 @@ router.get('/list', async (req, res) => {
     }
 });
 
-// ─── POST /api/workers/spawn ──────────────────────────────────────────────────
-// Spawn a new worker process locally
-router.post('/spawn', async (req, res) => {
+// ─── POST /api/workers/provision ──────────────────────────────────────────────
+// Provision a new remote worker node
+router.post('/provision', async (req, res) => {
     try {
         const WorkerService = require('../services/WorkerService');
-        const { workerId, port } = await WorkerService.spawnWorker();
+        const { workerId, token } = await WorkerService.provisionWorker();
 
-        // Return immediately (worker will register with heartbeat)
+        // Control plane public IP or domain (for now use req.headers.host)
+        const controlPlaneUrl = `${req.protocol}://${req.get('host')}`;
+
+        const installCommand = `KUBEX_TOKEN=${token} NODE_ID=${workerId} API_SERVER_URL=${controlPlaneUrl} npm run start`;
+
         res.json({
             success: true,
-            message: `Worker spawned: ${workerId}`,
+            message: `Worker provisioned: ${workerId}`,
             workerId,
-            port,
-            note: 'Worker will register with API server within 3 seconds',
+            token,
+            installCommand,
+            note: 'Run the installation command on your remote server to register this worker.',
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

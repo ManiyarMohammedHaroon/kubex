@@ -364,19 +364,22 @@ export default function Nodes() {
         }
     };
 
+    const [provisionData, setProvisionData] = useState(null);
+
     // Handle spawning a new worker
     const handleSpawnWorker = async () => {
         setSpawnLoading(true);
         setSpawnMessage('');
         try {
+            // Note: client.js must be updated to call /provision instead of /spawn
             const res = await spawnWorker();
             const { data } = res;
             if (data.success) {
-                setSpawnMessage(`✅ Worker "${data.workerId}" spawned on port ${data.port}! It will appear in the list within 3 seconds.`);
-                // Fetch nodes again after a short delay to show the new worker
-                setTimeout(fetchNodes, 3000);
+                setProvisionData(data);
+                // Fetch nodes again to show the pending node
+                setTimeout(fetchNodes, 1000);
             } else {
-                setSpawnMessage(`❌ Failed to spawn: ${data.error}`);
+                setSpawnMessage(`❌ Failed to provision: ${data.error}`);
             }
         } catch (err) {
             setSpawnMessage(`❌ Error: ${err.response?.data?.error || err.message}`);
@@ -419,7 +422,7 @@ export default function Nodes() {
                         disabled={spawnLoading}
                         style={{ minWidth: 140 }}
                     >
-                        {spawnLoading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Add Worker'}
+                        {spawnLoading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : '+ Add Worker'}
                     </button>
                     <div className="live-indicator" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--accent-green)', fontWeight: 600, background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: 100 }}>
                         <span className="badge-dot" style={{ animation: 'pulsar-green 2s infinite' }} />
@@ -427,6 +430,40 @@ export default function Nodes() {
                     </div>
                 </div>
             </div>
+
+            {/* Provisioning Modal */}
+            {provisionData && (
+                <div className="modal-overlay" onClick={() => setProvisionData(null)}>
+                    <div className="modal" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h2 style={{ margin: 0 }}>🚀 Connect Remote Worker</h2>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setProvisionData(null)}>✕</button>
+                        </div>
+                        <p style={{ color: 'var(--text-secondary)' }}>
+                            Run the following command on your remote server (AWS, DigitalOcean, etc.) to connect it to KUBEX:
+                        </p>
+                        <div style={{ background: '#111', padding: 16, borderRadius: 8, position: 'relative', marginTop: 16 }}>
+                            <code style={{ color: 'var(--accent-cyan)', wordBreak: 'break-all', display: 'block', fontSize: 13, lineHeight: '1.5' }}>
+                                {provisionData.installCommand}
+                            </code>
+                            <button 
+                                className="btn btn-sm btn-primary" 
+                                style={{ position: 'absolute', top: 12, right: 12 }}
+                                onClick={() => {
+                                    navigator.clipboard.writeText(provisionData.installCommand);
+                                    alert('Copied to clipboard!');
+                                }}
+                            >
+                                Copy
+                            </button>
+                        </div>
+                        <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,255,255,0.05)', borderRadius: 8, fontSize: 13 }}>
+                            <strong>API Token:</strong> <code style={{ color: 'var(--text-muted)' }}>{provisionData.token}</code><br/><br/>
+                            This node will show as "Unknown" or "Pending" until the agent boots up and sends its first heartbeat.
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Status message from worker spawn */}
             {spawnMessage && (

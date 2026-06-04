@@ -27,6 +27,7 @@ const API_URL = process.env.API_SERVER_URL || 'http://localhost:3001';
 const NODE_ID = process.env.NODE_ID || 'worker-1';
 const AGENT_ADDRESS = process.env.AGENT_ADDRESS || 'http://localhost:4001'; // Reported to API server
 const INTERVAL = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '3000');
+const KUBEX_TOKEN = process.env.KUBEX_TOKEN || ''; // Secure token for registration
 
 let heartbeatTimer = null;
 
@@ -47,7 +48,12 @@ async function sendHeartbeat() {
             metrics,
             containers,
             capacity: { cpu: 4, memory: 4096 }, // Static — reported once but stored in DB
-        }, { timeout: 3000 }); // 3 s timeout prevents heartbeat queue pile-up
+        }, { 
+            timeout: 3000,
+            headers: {
+                Authorization: `Bearer ${KUBEX_TOKEN}`
+            }
+        }); // 3 s timeout prevents heartbeat queue pile-up
 
         // ─── Self-Healing Logic ──────────────────────────────────────────────
         // If the API server says "shutdown", it means this node is no longer 

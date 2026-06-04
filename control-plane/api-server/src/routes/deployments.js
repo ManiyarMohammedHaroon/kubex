@@ -58,9 +58,8 @@ const spawnGitClone = (branch, url, targetPath) => {
 const Deployment = require('../models/Deployment');
 const Event = require('../models/Event');
 const User = require('../models/User');
-const DockerService = require('../services/DockerService');
-const ReconcilerService = require('../services/ReconcilerService');
-const LoadBalancer = require('../services/LoadBalancer');
+
+
 const auth = require('../middleware/auth');
 
 // ─── HELPER FUNCTIONS ────────────────────────────────────────────────────────
@@ -317,13 +316,36 @@ const finishGitDeploy = async (dep, logFilePath) => {
         involvedObject: { kind: 'Deployment', name: dep.name }
     });
     const fresh = await Deployment.findById(dep._id);
-    ReconcilerService.reconcileDeployment(fresh).catch(e => {
-        fs.appendFileSync(logFilePath, `[Error] Reconcile error: ${e.message}\n`);
-    });
 };
 
 // Protect all deployment routes under this router
 router.use(auth);
+
+// --- POST /api/deployments/worker/status --------------------------------
+// Called by the Worker Agent to update the status of a deployment and provide the localtunnel URL.
+router.post('/worker/status', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization || '';
+        const token = authHeader.replace('Bearer ', '').trim();
+        // Just verify any valid node token for now
+        const Node = require('../models/Node');
+        const node = await Node.findOne({ token });
+        if (!node) return res.status(403).json({ success: false, error: 'Forbidden' });
+
+        const { depId, status, tunnelUrl } = req.body;
+        const updateDoc = { status };
+        if (tunnelUrl) updateDoc.tunnelUrl = tunnelUrl;
+        
+        // Update actualReplicas based on status
+        if (status === 'Running') updateDoc.actualReplicas = 1; // Assuming 1 replica for local tunnels
+        if (status === 'Failed' || status === 'Pending') updateDoc.actualReplicas = 0;
+
+        await Deployment.findByIdAndUpdate(depId, { $set: updateDoc });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 // --- GET /api/deployments -----------------------------------------------
 router.get('/', async (req, res) => {
@@ -449,6 +471,7 @@ router.post('/', async (req, res) => {
                 desiredReplicas,
                 resourceLimits: { cpu: resourceLimits.cpu || '0.5', memory: resourceLimits.memory || '128m' },
                 envVars: [...(envVars || []), { key: 'API_BACKEND', value: `${name}-backend` }], // AUTO-CONNECT TO BACKEND
+                previewDomain: `preview-${name}-frontend.localhost:8080`,
                 autoscalingEnabled, minReplicas, maxReplicas,
                 cpuThresholdUp, cpuThresholdDown,
                 staticHostPort: '', // auto-assign to avoid conflict
@@ -469,6 +492,7 @@ router.post('/', async (req, res) => {
                 desiredReplicas,
                 resourceLimits: { cpu: resourceLimits.cpu || '0.5', memory: resourceLimits.memory || '128m' },
                 envVars,
+                previewDomain: `preview-${name}-backend.localhost:8080`,
                 autoscalingEnabled, minReplicas, maxReplicas,
                 cpuThresholdUp, cpuThresholdDown,
                 staticHostPort: '', // auto-assign to avoid conflict
@@ -493,8 +517,7 @@ router.post('/', async (req, res) => {
                 involvedObject: { kind: 'Deployment', name: `${name}-backend` },
             });
 
-            setImmediate(() => triggerGitBuild(frontendDeployment).catch(e => console.error('[API] Frontend Git Build Error:', e.message)));
-            setImmediate(() => triggerGitBuild(backendDeployment).catch(e => console.error('[API] Backend Git Build Error:', e.message)));
+
 
             return res.status(201).json({ success: true, data: [frontendDeployment, backendDeployment] });
         } else {
@@ -519,6 +542,7 @@ router.post('/', async (req, res) => {
                 desiredReplicas,
                 resourceLimits: { cpu: resourceLimits.cpu || '0.5', memory: resourceLimits.memory || '128m' },
                 envVars,
+                previewDomain: `preview-${name}.localhost:8080`,
                 autoscalingEnabled, minReplicas, maxReplicas,
                 cpuThresholdUp, cpuThresholdDown,
                 staticHostPort,
@@ -537,7 +561,7 @@ router.post('/', async (req, res) => {
                 involvedObject: { kind: 'Deployment', name },
             });
 
-            setImmediate(() => triggerGitBuild(deployment).catch(e => console.error('[API] Git Build Error:', e.message)));
+
 
             return res.status(201).json({ success: true, data: [deployment] });
         }
@@ -572,7 +596,7 @@ router.put('/:id/scale', async (req, res) => {
         });
 
         const updatedDep = await Deployment.findById(dep._id);
-        setImmediate(() => ReconcilerService.reconcileDeployment(updatedDep).catch(e => console.error('[API] Immediate Reconcile Error:', e.message)));
+
         res.json({ success: true, data: updatedDep });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -608,11 +632,6 @@ router.post('/:id/rebalance', async (req, res) => {
 
         console.log(`[API] Rebalancing deployment "${dep.name}"...`);
 
-        const containers = await DockerService.listContainersByLabel({ 'kubex.deployment': dep.name });
-        for (const c of containers) {
-            await DockerService.stopAndRemoveContainer(c.containerId).catch(() => {});
-        }
-
         await Deployment.findByIdAndUpdate(dep._id, { $set: { containers: [], status: 'Scaling' } });
 
         await Event.create({
@@ -622,7 +641,7 @@ router.post('/:id/rebalance', async (req, res) => {
         });
 
         const freshDep = await Deployment.findById(dep._id);
-        setImmediate(() => ReconcilerService.reconcileDeployment(freshDep).catch(e => console.error('[API] Rebalance Reconcile Error:', e.message)));
+
         res.json({ success: true, message: `Rebalance initiated for "${dep.name}"` });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -646,15 +665,6 @@ router.delete('/:id', async (req, res) => {
         // 2. Perform heavy cleanup in the background
         setImmediate(async () => {
             try {
-                // Stop all containers
-                const allContainers = await DockerService.listContainersByLabel({ 'kubex.deployment': dep.name });
-                for (const c of allContainers) {
-                    await DockerService.stopAndRemoveContainer(c.containerId).catch(() => {});
-                }
-
-                // Remove from Load Balancer
-                LoadBalancer.removePool(dep.name);
-
                 // Finally delete the record
                 await Deployment.deleteOne({ _id: dep._id });
 
@@ -783,4 +793,46 @@ router.delete('/:id/share/:userId', async (req, res) => {
 });
 
 router.triggerGitBuild = triggerGitBuild;
+// POST /:id/domains - Add a custom domain
+router.post('/:id/domains', async (req, res) => {
+    try {
+        const { domain } = req.body;
+        if (!domain) return res.status(400).json({ error: 'Domain is required' });
+
+        const dep = await Deployment.findById(req.params.id);
+        if (!dep) return res.status(404).json({ error: 'Deployment not found' });
+        if (dep.owner.toString() !== req.user.userId && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        if (!dep.customDomains.includes(domain)) {
+            dep.customDomains.push(domain);
+            await dep.save();
+        }
+
+        res.json({ success: true, customDomains: dep.customDomains });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /:id/domains/:domain - Remove a custom domain
+router.delete('/:id/domains/:domain', async (req, res) => {
+    try {
+        const { domain } = req.params;
+        const dep = await Deployment.findById(req.params.id);
+        if (!dep) return res.status(404).json({ error: 'Deployment not found' });
+        if (dep.owner.toString() !== req.user.userId && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        dep.customDomains = dep.customDomains.filter(d => d !== domain);
+        await dep.save();
+
+        res.json({ success: true, customDomains: dep.customDomains });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

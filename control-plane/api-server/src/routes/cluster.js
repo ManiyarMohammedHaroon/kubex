@@ -13,8 +13,7 @@
 const router = require('express').Router();
 const Deployment = require('../models/Deployment');
 const Node = require('../models/Node');
-const DockerService = require('../services/DockerService');
-const LoadBalancer = require('../services/LoadBalancer');
+
 const { getNodeScores } = require('../services/SchedulerService');
 const auth = require('../middleware/auth');
 
@@ -66,15 +65,7 @@ router.get('/status', auth, async (req, res) => {
             ? nodes.reduce((s, n) => s + n.metrics.memUsage, 0) / nodes.length
             : 0;
 
-        // Load Balancer Pools — filter to only include pools for deployments this user owns/views
-        const lbPools = LoadBalancer.getAllPools();
-        const userDeploymentNames = new Set(deployments.map(d => d.name));
-        const filteredLbPools = {};
-        for (const name of userDeploymentNames) {
-            if (lbPools[name]) {
-                filteredLbPools[name] = lbPools[name];
-            }
-        }
+
 
         res.json({
             success: true,
@@ -95,7 +86,7 @@ router.get('/status', auth, async (req, res) => {
                     avgMemUsage: parseFloat(avgMem.toFixed(2)),
                     healthy: readyNodes === totalNodes && totalActual === totalDesired,
                 },
-                loadBalancer: filteredLbPools, // Scoped round-robin pools for user's deployments
+
                 timestamp: new Date(),
             },
         });

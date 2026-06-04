@@ -122,6 +122,30 @@ router.get('/:nodeId', auth, async (req, res) => {
     }
 });
 
+// ─── GET /api/nodes/:nodeId/tasks ─────────────────────────────────────────────
+// Called by the worker agent every few seconds to pull its desired state.
+// This implements the "Pull" architecture for KUBEX.
+router.get('/:nodeId/tasks', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization || '';
+        const token = authHeader.replace('Bearer ', '').trim();
+        const existingNode = await Node.findOne({ nodeId: req.params.nodeId });
+        
+        if (!existingNode || existingNode.token !== token) {
+            return res.status(403).json({ success: false, error: 'Forbidden' });
+        }
+
+        // Return all deployments that need to be run, built, or stopped.
+        // For local auto-tunneling, we assume 1 worker node, so we just return ALL deployments.
+        // The worker will reconcile them locally.
+        const deployments = await Deployment.find({ status: { $ne: 'Terminating' } });
+        res.json({ success: true, data: deployments });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+
 // ─── POST /api/heartbeat (/api/nodes/heartbeat) ───────────────────────────────
 // Called by every worker agent every HEARTBEAT_INTERVAL_MS (default 3 seconds).
 //
@@ -141,6 +165,23 @@ router.post('/heartbeat', async (req, res) => {
         const { nodeId, address, metrics, containers, capacity } = req.body;
         if (!nodeId || !address) {
             return res.status(400).json({ success: false, error: 'nodeId and address required' });
+        }
+
+        const authHeader = req.headers.authorization || '';
+        const token = authHeader.replace('Bearer ', '').trim();
+
+        if (!token) {
+            return res.status(401).json({ success: false, error: 'Unauthorized: KUBEX_TOKEN required' });
+        }
+
+        // Verify the token matches the node record provisioned in the DB
+        const existingNode = await Node.findOne({ nodeId });
+        if (!existingNode) {
+            return res.status(404).json({ success: false, error: 'Node not provisioned. Add node from KUBEX dashboard first.' });
+        }
+
+        if (existingNode.token !== token) {
+            return res.status(403).json({ success: false, error: 'Forbidden: Invalid KUBEX_TOKEN for this node' });
         }
 
         // Use an "Upsert" strategy: Update the node if it exists, CREATE it if it doesn't.
