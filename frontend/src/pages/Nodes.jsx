@@ -421,7 +421,7 @@ export default function Nodes() {
                     </button>
                     <button
                         className="btn btn-primary"
-                        onClick={() => setShowTypeModal(true)}
+                        onClick={() => handleSpawnWorker('remote')}
                         disabled={spawnLoading}
                         style={{ minWidth: 140 }}
                     >
@@ -434,40 +434,6 @@ export default function Nodes() {
                 </div>
             </div>
 
-            {/* Choose Environment Modal */}
-            {showTypeModal && (
-                <div className="modal-overlay" onClick={() => setShowTypeModal(false)}>
-                    <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                            <h2 style={{ margin: 0 }}>Select Worker Environment</h2>
-                            <button className="btn btn-secondary btn-sm" onClick={() => setShowTypeModal(false)}>✕</button>
-                        </div>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>
-                            Where do you want this new worker node to run?
-                        </p>
-                        
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            <button 
-                                className="btn btn-secondary" 
-                                style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', whiteSpace: 'normal' }}
-                                onClick={() => handleSpawnWorker('local')}
-                            >
-                                <strong style={{ fontSize: 16, marginBottom: 4 }}>Local Docker Environment</strong>
-                                <span style={{ fontWeight: 'normal', opacity: 0.8, textAlign: 'left', fontSize: 13 }}>KUBEX will automatically spin up a new worker container in the background.</span>
-                            </button>
-                            
-                            <button 
-                                className="btn btn-secondary" 
-                                style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', whiteSpace: 'normal' }}
-                                onClick={() => handleSpawnWorker('remote')}
-                            >
-                                <strong style={{ fontSize: 16, marginBottom: 4 }}>External Cloud Server (AWS, etc)</strong>
-                                <span style={{ fontWeight: 'normal', opacity: 0.8, textAlign: 'left', fontSize: 13 }}>Get a secure terminal command to install the worker agent on a remote VPS.</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Provisioning Modal */}
             {provisionData && (
