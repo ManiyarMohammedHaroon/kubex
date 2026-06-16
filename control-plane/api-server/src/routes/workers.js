@@ -85,9 +85,9 @@ router.post('/provision', async (req, res) => {
             // We use standard bash for remote linux servers
             const apiHost = req.headers.host.includes('localhost') 
                 ? 'http://<YOUR_API_IP>:3001' // Placeholder for production
-                : `http://${req.headers.host}`;
+                : `https://${req.headers.host}`;
             
-            const installCommand = `docker run -d --name kubex-${workerId} --restart unless-stopped -e NODE_ID=${workerId} -e NODE_ENV=cloud -e KUBEX_TOKEN=${token} -e API_SERVER_URL=${apiHost} -v /var/run/docker.sock:/var/run/docker.sock kubex-worker-agent:latest`;
+            const installCommand = `docker run -d --name kubex-${workerId} --restart unless-stopped -e NODE_ID=${workerId} -e NODE_ENV=cloud -e KUBEX_TOKEN=${token} -e API_SERVER_URL=${apiHost} -v /var/run/docker.sock:/var/run/docker.sock harxn/kubex-worker-agent:latest`;
 
             res.json({
                 success: true,
