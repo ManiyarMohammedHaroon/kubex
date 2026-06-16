@@ -131,7 +131,7 @@ async function bootstrap() {
     await connectDB(); // Must succeed before anything else runs
 
     const PORT = process.env.PORT || 3001;
-    app.listen(PORT, async () => {
+    app.listen(PORT, '0.0.0.0', async () => {
         console.log(`\n🚀 KUBEX API Server running on http://localhost:${PORT}`);
         console.log('──────────────────────────────────────────────');
 
