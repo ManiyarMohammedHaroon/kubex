@@ -79,7 +79,7 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
         dockerHubUsername: localStorage.getItem('kubex_dockerhub_username') || '',
         healthCheckEnabled: false,
         healthCheckPath: '/health',
-        environment: 'local'
+        environment: 'cloud'
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -162,37 +162,7 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
                         />
                     </div>
 
-                    <div className="form-group" style={{ background: 'rgba(255,255,255,0.03)', padding: 15, borderRadius: 8, border: '1px solid var(--border)' }}>
-                        <label style={{ marginBottom: 10, display: 'block', fontWeight: 600 }}>Target Environment</label>
-                        <div style={{ display: 'flex', gap: 15 }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', opacity: form.environment === 'local' ? 1 : 0.6 }}>
-                                <input 
-                                    type="radio" 
-                                    name="environment" 
-                                    value="local" 
-                                    checked={form.environment === 'local'} 
-                                    onChange={e => setForm(p => ({ ...p, environment: e.target.value }))} 
-                                />
-                                <div>
-                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Local Laptop</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Runs locally. Sleeps when laptop sleeps.</div>
-                                </div>
-                            </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', opacity: form.environment === 'cloud' ? 1 : 0.6 }}>
-                                <input 
-                                    type="radio" 
-                                    name="environment" 
-                                    value="cloud" 
-                                    checked={form.environment === 'cloud'} 
-                                    onChange={e => setForm(p => ({ ...p, environment: e.target.value }))} 
-                                />
-                                <div>
-                                    <div style={{ fontWeight: 600, color: '#60a5fa' }}>Cloud Server</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Runs on remote VPS. 24/7 Uptime.</div>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
+
 
                     <div className="form-row">
                         <div className="form-group">
