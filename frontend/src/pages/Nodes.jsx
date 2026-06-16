@@ -14,7 +14,7 @@
  *   NodeCard         — compact node summary card
  */
 import { useEffect, useState, useCallback } from 'react';
-import { getNodes, getNodeDetail, getNodeLogs, triggerStress, triggerChaosKill, deleteNode, spawnWorker } from '../api/client';
+import { getNodes, getNodeDetail, getNodeLogs, triggerStress, triggerChaosKill, deleteNode, provisionWorker } from '../api/client';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ function NodeDetailModal({ nodeId, onClose }) {
             {/* Stop clicks inside the modal from closing it */}
             <div className="modal" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                    <h2 style={{ margin: 0 }}>🖥 Node Details: {details.nodeId}</h2>
+                    <h2 style={{ margin: 0 }}>Node Details: {details.nodeId}</h2>
                     <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
                 </div>
 
@@ -156,7 +156,7 @@ function NodeDetailModal({ nodeId, onClose }) {
                                 }
                             }}
                         >
-                            🔥 Burn CPU (AutoScaling)
+                            Burn CPU (AutoScaling)
                         </button>
                         {/* Chaos Kill: stop a random container → tests Reconciler self-healing */}
                         <button
@@ -172,7 +172,7 @@ function NodeDetailModal({ nodeId, onClose }) {
                                 }
                             }}
                         >
-                            🐒 Kill Random (Self-Healing)
+                            Kill Random (Self-Healing)
                         </button>
                     </div>
                 </div>
@@ -272,7 +272,7 @@ function NodeCard({ node, onClick, onDelete }) {
                 }}
             />
 
-            <div className="node-card-bg-icon">🖥</div>
+            <div className="node-card-bg-icon" style={{ opacity: 0.1 }}>Node</div>
 
             <div className="node-header" style={{ marginBottom: 16 }}>
                 <div>
@@ -289,7 +289,7 @@ function NodeCard({ node, onClick, onDelete }) {
                             onDelete(node.nodeId);
                         }}
                     >
-                        🗑
+                        Delete
                     </button>
                 </div>
             </div>
@@ -308,7 +308,7 @@ function NodeCard({ node, onClick, onDelete }) {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                 <span className="badge badge-gray" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                    📦 {node.metrics?.containerCount ?? 0} Containers
+                    <div>{node.metrics?.containerCount ?? 0} Containers</div>
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                     {node.lastHeartbeat ? `Updated ${Math.floor((Date.now() - new Date(node.lastHeartbeat)) / 1000)}s ago` : 'N/A'}
@@ -327,6 +327,7 @@ export default function Nodes() {
     const [selectedNodeId, setSelectedNodeId] = useState(null); // null = no modal open
     const [spawnLoading, setSpawnLoading] = useState(false);
     const [spawnMessage, setSpawnMessage] = useState('');
+    const [showTypeModal, setShowTypeModal] = useState(false);
 
     // Fetch the node list and refresh every 3 s
     const fetchNodes = useCallback(async () => {
@@ -356,10 +357,10 @@ export default function Nodes() {
                 for (const node of nodes) {
                     await deleteNode(node.nodeId);
                 }
-                setSpawnMessage("✅ Cluster cleared. All node records removed.");
+                setSpawnMessage("Success: Cluster cleared. All node records removed.");
                 fetchNodes();
             } catch (err) {
-                setSpawnMessage(`❌ Error clearing nodes: ${err.message}`);
+                setSpawnMessage(`Error: Error clearing nodes: ${err.message}`);
             }
         }
     };
@@ -367,22 +368,22 @@ export default function Nodes() {
     const [provisionData, setProvisionData] = useState(null);
 
     // Handle spawning a new worker
-    const handleSpawnWorker = async () => {
+    const handleSpawnWorker = async (type) => {
+        setShowTypeModal(false);
         setSpawnLoading(true);
         setSpawnMessage('');
         try {
-            // Note: client.js must be updated to call /provision instead of /spawn
-            const res = await spawnWorker();
+            const res = await provisionWorker(type);
             const { data } = res;
             if (data.success) {
-                setProvisionData(data);
+                setProvisionData({ ...data, type });
                 // Fetch nodes again to show the pending node
                 setTimeout(fetchNodes, 1000);
             } else {
-                setSpawnMessage(`❌ Failed to provision: ${data.error}`);
+                setSpawnMessage(`Error: Failed to provision: ${data.error}`);
             }
         } catch (err) {
-            setSpawnMessage(`❌ Error: ${err.response?.data?.error || err.message}`);
+            setSpawnMessage(`Error: ${err.response?.data?.error || err.message}`);
         } finally {
             setSpawnLoading(false);
             // Clear message after 8 seconds
@@ -399,6 +400,8 @@ export default function Nodes() {
         );
     }
 
+    const isNodeReady = provisionData && nodes.some(n => n.nodeId === provisionData.workerId && n.status === 'Ready');
+
     return (
         <div style={{ animation: 'slide-up 0.5s ease-out' }}>
             {/* ── Page Header ─────────────────────────────────────────────────── */}
@@ -414,11 +417,11 @@ export default function Nodes() {
                         disabled={nodes.length === 0}
                         title="Remove all node records"
                     >
-                        🗑 Clear All
+                        Clear All
                     </button>
                     <button
                         className="btn btn-primary"
-                        onClick={handleSpawnWorker}
+                        onClick={() => setShowTypeModal(true)}
                         disabled={spawnLoading}
                         style={{ minWidth: 140 }}
                     >
@@ -431,35 +434,108 @@ export default function Nodes() {
                 </div>
             </div>
 
+            {/* Choose Environment Modal */}
+            {showTypeModal && (
+                <div className="modal-overlay" onClick={() => setShowTypeModal(false)}>
+                    <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h2 style={{ margin: 0 }}>Select Worker Environment</h2>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setShowTypeModal(false)}>✕</button>
+                        </div>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>
+                            Where do you want this new worker node to run?
+                        </p>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <button 
+                                className="btn btn-secondary" 
+                                style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', whiteSpace: 'normal' }}
+                                onClick={() => handleSpawnWorker('local')}
+                            >
+                                <strong style={{ fontSize: 16, marginBottom: 4 }}>Local Docker Environment</strong>
+                                <span style={{ fontWeight: 'normal', opacity: 0.8, textAlign: 'left', fontSize: 13 }}>KUBEX will automatically spin up a new worker container in the background.</span>
+                            </button>
+                            
+                            <button 
+                                className="btn btn-secondary" 
+                                style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', whiteSpace: 'normal' }}
+                                onClick={() => handleSpawnWorker('remote')}
+                            >
+                                <strong style={{ fontSize: 16, marginBottom: 4 }}>External Cloud Server (AWS, etc)</strong>
+                                <span style={{ fontWeight: 'normal', opacity: 0.8, textAlign: 'left', fontSize: 13 }}>Get a secure terminal command to install the worker agent on a remote VPS.</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Provisioning Modal */}
             {provisionData && (
                 <div className="modal-overlay" onClick={() => setProvisionData(null)}>
                     <div className="modal" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                            <h2 style={{ margin: 0 }}>🚀 Connect Remote Worker</h2>
+                            <h2 style={{ margin: 0 }}>{provisionData.type === 'remote' ? 'Connect Remote Worker' : 'Worker Status'}</h2>
                             <button className="btn btn-secondary btn-sm" onClick={() => setProvisionData(null)}>✕</button>
                         </div>
-                        <p style={{ color: 'var(--text-secondary)' }}>
-                            Run the following command on your remote server (AWS, DigitalOcean, etc.) to connect it to KUBEX:
-                        </p>
-                        <div style={{ background: '#111', padding: 16, borderRadius: 8, position: 'relative', marginTop: 16 }}>
-                            <code style={{ color: 'var(--accent-cyan)', wordBreak: 'break-all', display: 'block', fontSize: 13, lineHeight: '1.5' }}>
-                                {provisionData.installCommand}
-                            </code>
-                            <button 
-                                className="btn btn-sm btn-primary" 
-                                style={{ position: 'absolute', top: 12, right: 12 }}
-                                onClick={() => {
-                                    navigator.clipboard.writeText(provisionData.installCommand);
-                                    alert('Copied to clipboard!');
-                                }}
-                            >
-                                Copy
-                            </button>
-                        </div>
-                        <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,255,255,0.05)', borderRadius: 8, fontSize: 13 }}>
-                            <strong>API Token:</strong> <code style={{ color: 'var(--text-muted)' }}>{provisionData.token}</code><br/><br/>
-                            This node will show as "Unknown" or "Pending" until the agent boots up and sends its first heartbeat.
+                        
+                        {provisionData.type === 'local' ? (
+                            isNodeReady ? (
+                                <>
+                                    <p style={{ color: 'var(--text-secondary)' }}>
+                                        KUBEX has successfully started your new worker node!
+                                    </p>
+                                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--accent-green)', padding: 24, borderRadius: 8, marginTop: 16, textAlign: 'center' }}>
+                                        <span style={{ fontSize: 24, display: 'block', marginBottom: 16, fontWeight: 'bold', color: 'var(--accent-green)' }}>SUCCESS</span>
+                                        <h3 style={{ color: 'var(--accent-green)', marginTop: 0, marginBottom: 8, fontSize: 18, fontWeight: 700 }}>Worker Registered & Ready!</h3>
+                                        <code style={{ color: 'var(--text-primary)', display: 'inline-block', padding: '4px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, fontSize: 13, marginBottom: 16 }}>Worker ID: {provisionData.workerId}</code>
+                                        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 20px 0' }}>
+                                            The worker agent has booted up, connected to the control plane, and started reporting live metrics.
+                                        </p>
+                                        <button className="btn btn-primary" onClick={() => setProvisionData(null)} style={{ minWidth: 150 }}>
+                                            Close
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <p style={{ color: 'var(--text-secondary)' }}>
+                                        KUBEX is starting your new worker node in the background via Docker.
+                                    </p>
+                                    <div style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid var(--border)', padding: 24, borderRadius: 8, position: 'relative', marginTop: 16, textAlign: 'center' }}>
+                                        <div className="spinner" style={{ width: 24, height: 24, display: 'inline-block', marginBottom: 16 }} />
+                                        <p style={{ margin: '0 0 16px 0', fontSize: 14 }}>Automatically spinning up worker container...</p>
+                                        <code style={{ color: 'var(--text-muted)', fontSize: 12 }}>Worker ID: {provisionData.workerId}</code>
+                                    </div>
+                                </>
+                            )
+                        ) : (
+                            <>
+                                <p style={{ color: 'var(--text-secondary)' }}>
+                                    Run the following command on your remote server (AWS, DigitalOcean, etc.) to connect it to KUBEX:
+                                </p>
+                                <div style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid var(--border)', padding: 16, paddingRight: 80, borderRadius: 8, position: 'relative', marginTop: 16 }}>
+                                    <code style={{ color: 'var(--text-primary)', wordBreak: 'break-all', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', display: 'block', fontSize: 13, lineHeight: '1.5' }}>
+                                        {provisionData.installCommand}
+                                    </code>
+                                    <button 
+                                        className="btn btn-sm btn-primary" 
+                                        style={{ position: 'absolute', top: 12, right: 12 }}
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(provisionData.installCommand);
+                                            alert('Copied to clipboard!');
+                                        }}
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,255,255,0.5)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}>
+                                    <strong>API Token:</strong> <code style={{ color: 'var(--text-muted)', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{provisionData.token}</code>
+                                </div>
+                            </>
+                        )}
+                        
+                        <div style={{ marginTop: 24, padding: 16, background: 'rgba(255,255,255,0.5)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}>
+                            {isNodeReady ? 'This node is now fully operational in the cluster.' : 'This node will show as "Unknown" or "Pending" until the agent boots up and sends its first heartbeat.'}
                         </div>
                     </div>
                 </div>
@@ -471,7 +547,7 @@ export default function Nodes() {
                     marginBottom: 24,
                     padding: 12,
                     borderRadius: 6,
-                    backgroundColor: spawnMessage.includes('✅') ? '#1a4d2e' : '#8b0000',
+                    backgroundColor: spawnMessage.startsWith('Success') ? '#1a4d2e' : '#8b0000',
                     color: '#fff',
                     fontSize: 13
                 }}>
@@ -510,7 +586,7 @@ export default function Nodes() {
             {/* Empty state: shown when no workers have registered yet */}
             {nodes.length === 0 ? (
                 <div className="empty-state" style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius)', border: '1px solid var(--glass-border)' }}>
-                    <div className="empty-icon">🖥</div>
+                    <div className="empty-icon" style={{ opacity: 0.5 }}>Nodes</div>
                     <h3>No nodes registered</h3>
                     <p>Start the worker-agent to register nodes with the cluster</p>
                 </div>

@@ -6,6 +6,7 @@ import Deployments from './pages/Deployments';
 import Logs from './pages/Logs';
 import Images from './pages/Images';
 import Databases from './pages/Databases';
+import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import './index.css';
@@ -16,11 +17,12 @@ import './index.css';
  */
 const navItems = [
   { path: '/', icon: '⬡', label: 'Dashboard', exact: true },
-  { path: '/nodes', icon: '🖥', label: 'Nodes' },
-  { path: '/deployments', icon: '📦', label: 'Deployments' },
-  { path: '/images', icon: '📚', label: 'Images' },
-  { path: '/logs', icon: '📋', label: 'Logs' },
-  { path: '/databases', icon: '🗄', label: 'Databases' },
+  { path: '/nodes', icon: '', label: 'Nodes' },
+  { path: '/deployments', icon: '', label: 'Deployments' },
+  { path: '/images', icon: '', label: 'Images' },
+  { path: '/logs', icon: '', label: 'Logs' },
+  { path: '/databases', icon: '', label: 'Databases' },
+  { path: '/settings', icon: '', label: 'Settings' },
 ];
 
 export default function App() {
@@ -56,6 +58,10 @@ export default function App() {
     if (user.role === 'viewer') {
       // Viewers can access Dashboard, Deployments, Logs, and Databases
       return item.path === '/' || item.path === '/deployments' || item.path === '/logs' || item.path === '/databases';
+    }
+    // Developers and Admins can see the Nodes tab
+    if (user.role !== 'admin' && item.path === '/images') {
+      return false;
     }
     return true;
   });
@@ -124,13 +130,16 @@ export default function App() {
             <Route path="/logs" element={<Logs />} />
             
             <Route path="/databases" element={<Databases />} />
+            <Route path="/settings" element={<Settings />} />
             
-            {/* Protect infrastructure routes from Client Viewers */}
+            {/* Infrastructure Routes */}
             {user.role !== 'viewer' && (
-              <>
-                <Route path="/nodes" element={<Nodes />} />
-                <Route path="/images" element={<Images />} />
-              </>
+              <Route path="/nodes" element={<Nodes />} />
+            )}
+            
+            {/* Admin-only Routes */}
+            {user.role === 'admin' && (
+              <Route path="/images" element={<Images />} />
             )}
 
             {/* Fallback route */}

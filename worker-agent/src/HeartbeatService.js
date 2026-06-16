@@ -44,10 +44,12 @@ async function sendHeartbeat() {
 
         const response = await axios.post(`${API_URL}/api/heartbeat`, {
             nodeId: NODE_ID,
+            token: KUBEX_TOKEN,
             address: AGENT_ADDRESS,  // API server stores this so frontend Chaos buttons work
             metrics,
             containers,
             capacity: { cpu: 4, memory: 4096 }, // Static — reported once but stored in DB
+            environment: process.env.NODE_ENV || 'local',
         }, { 
             timeout: 3000,
             headers: {

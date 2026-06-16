@@ -165,6 +165,7 @@ function EventFeed({ events }) {
 // ─── Main Page Component ──────────────────────────────────────────────────────
 
 export default function Dashboard() {
+    const user = JSON.parse(localStorage.getItem('kubex_user') || '{}');
     const [status, setStatus] = useState(null);         // Cluster status snapshot
     const [nodes, setNodes] = useState([]);           // Full node list (unused in UI but fetched for future use)
     const [events, setEvents] = useState([]);           // Last 20 cluster events
@@ -231,13 +232,13 @@ export default function Dashboard() {
             const res = await spawnWorker();
             const { data } = res;
             if (data.success) {
-                setSpawnMessage(`✅ Worker "${data.workerId}" spawned on port ${data.port}!`);
+                setSpawnMessage(`Success: Worker "${data.workerId}" spawned on port ${data.port}!`);
                 setTimeout(fetchAll, 3000);
             } else {
-                setSpawnMessage(`❌ Failed to spawn: ${data.error}`);
+                setSpawnMessage(`Error: Failed to spawn: ${data.error}`);
             }
         } catch (err) {
-            setSpawnMessage(`❌ Error: ${err.response?.data?.error || err.message}`);
+            setSpawnMessage(`Error: ${err.response?.data?.error || err.message}`);
         } finally {
             setSpawnLoading(false);
             setTimeout(() => setSpawnMessage(''), 8000);
@@ -268,14 +269,16 @@ export default function Dashboard() {
                     <div className="page-subtitle">Real-time overview of all nodes, pods, and deployments</div>
                 </div>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <button
-                        className="btn btn-primary"
-                        onClick={handleSpawnWorker}
-                        disabled={spawnLoading}
-                        style={{ minWidth: 140 }}
-                    >
-                        {spawnLoading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Add Worker'}
-                    </button>
+                    {user?.role !== 'viewer' && (
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleSpawnWorker}
+                            disabled={spawnLoading}
+                            style={{ minWidth: 140 }}
+                        >
+                            {spawnLoading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Add Worker'}
+                        </button>
+                    )}
                     <div className="live-indicator" style={{ color: error ? 'var(--accent-red)' : 'var(--accent-green)' }}>
                         <div className="live-dot" style={{ backgroundColor: error ? 'var(--accent-red)' : 'var(--accent-green)' }} />
                         {error ? 'Disconnected' : 'Live · updates every 3s'}
@@ -286,13 +289,10 @@ export default function Dashboard() {
             {/* Status message from worker spawn */}
             {spawnMessage && (
                 <div style={{
-                    marginBottom: 24,
-                    padding: '10px 16px',
-                    borderRadius: 8,
-                    backgroundColor: spawnMessage.includes('✅') ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    border: `1px solid ${spawnMessage.includes('✅') ? 'var(--accent-green)' : 'var(--accent-red)'}`,
+                    marginTop: 12, padding: 12, borderRadius: 6, fontSize: 14,
+                    backgroundColor: spawnMessage.startsWith('Success') ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                    border: `1px solid ${spawnMessage.startsWith('Success') ? 'var(--accent-green)' : 'var(--accent-red)'}`,
                     color: '#fff',
-                    fontSize: 13,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',

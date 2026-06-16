@@ -17,66 +17,93 @@
  */
 const Node = require('../models/Node');
 
+let schedulerTimer = null;
+
 /**
- * Select the best available node for placing a new container.
- *
- * @returns {Promise<{nodeId: string, address: string|null}>}
- *   nodeId  — the chosen node's ID (e.g. "worker-1")
- *   address — the worker agent's HTTP address (null if using "local" fallback)
+ * Periodically distributes desiredReplicas evenly across all Ready nodes.
+ * Saves the quotas into Deployment.nodeAssignments for the worker agents to pull.
  */
-async function selectNode() {
-    const readyNodes = await Node.find({ status: 'Ready' });
+async function scheduleAll() {
+    try {
+        const readyNodes = await Node.find({ status: 'Ready' }).sort({ createdAt: 1 });
+        if (readyNodes.length === 0) return; // No workers to assign to
 
-    // Fallback: no worker nodes registered yet — throw error to keep deployment Pending
-    if (readyNodes.length === 0) {
-        throw new Error('No Ready nodes available for scheduling');
+        const Deployment = require('../models/Deployment');
+        const deployments = await Deployment.find({ status: { $ne: 'Terminating' } });
+        
+        for (const dep of deployments) {
+            const assignments = {};
+            
+            // Filter nodes by the deployment's requested environment
+            const eligibleNodes = readyNodes.filter(n => n.environment === dep.environment);
+            
+            eligibleNodes.forEach(n => assignments[n.nodeId] = 0);
+            
+            let assignedCount = 0;
+            let nodeIdx = 0;
+            
+            // Distribute replicas evenly (round-robin) across eligible nodes
+            if (eligibleNodes.length > 0) {
+                while (assignedCount < dep.desiredReplicas) {
+                    const n = eligibleNodes[nodeIdx % eligibleNodes.length];
+                    assignments[n.nodeId]++;
+                    assignedCount++;
+                    nodeIdx++;
+                }
+            }
+            
+            // Check if assignments changed to avoid unnecessary DB writes
+            let changed = false;
+            for (const [nodeId, count] of Object.entries(assignments)) {
+                if (dep.nodeAssignments.get(nodeId) !== count) {
+                    changed = true;
+                    break;
+                }
+            }
+            for (const key of dep.nodeAssignments.keys()) {
+                if (assignments[key] === undefined) {
+                    changed = true; // A node was removed from assignments
+                    break;
+                }
+            }
+            
+            if (changed) {
+                // Use Mongoose Map methods to ensure changes are tracked and saved
+                for (const key of dep.nodeAssignments.keys()) {
+                    if (assignments[key] === undefined) {
+                        dep.nodeAssignments.delete(key);
+                    }
+                }
+                for (const [nodeId, count] of Object.entries(assignments)) {
+                    dep.nodeAssignments.set(nodeId, count);
+                }
+                
+                await dep.save();
+                console.log(`[Scheduler] Updated assignments for ${dep.name}:`, assignments);
+            }
+        }
+    } catch (e) {
+        console.error('[Scheduler] Error in scheduleAll loop:', e.message);
     }
-
-    // ── Real-time Load Calculation ───────────────────────────────────────────
-    // We don't just trust node.metrics.containerCount because it only updates 
-    // every 3 seconds via heartbeat. To ensure perfect spreading during a 
-    // fast scale-up, we calculate the "live" count by looking at all deployments.
-    const Deployment = require('../models/Deployment');
-    const allDeployments = await Deployment.find().lean();
-    const liveCounts = {};
-    allDeployments.forEach(dep => {
-        dep.containers.forEach(c => {
-            liveCounts[c.nodeId] = (liveCounts[c.nodeId] || 0) + 1;
-        });
-    });
-
-    // Filter out overloaded nodes (CPU or MEM above 95%) then score the rest
-    const scored = readyNodes
-        .filter((n) => (n.metrics?.cpuUsage || 0) < 95 && (n.metrics?.memUsage || 0) < 95)
-        .map((n) => {
-            const currentContainers = liveCounts[n.nodeId] || 0;
-            return {
-                node: n,
-                // Weighted score: 60% CPU, 40% memory, plus a heavy penalty for existing containers.
-                // Penalty of 10.0 per container ensures we always fill empty workers first.
-                score: ((n.metrics?.cpuUsage || 0) * 0.6) + 
-                       ((n.metrics?.memUsage || 0) * 0.4) + 
-                       (currentContainers * 10.0) + 
-                       (Math.random() * 0.1),
-            };
-        })
-        .sort((a, b) => a.score - b.score); // Ascending: best candidate first
-
-    if (scored.length === 0) {
-        // All nodes are maxed out — choose the "least worst" to avoid hard failure
-        // Sort by total load (cpu + mem unweighted) and pick the lightest
-        const fallback = readyNodes.sort(
-            (a, b) =>
-                ((a.metrics?.cpuUsage || 0) + (a.metrics?.memUsage || 0)) -
-                ((b.metrics?.cpuUsage || 0) + (b.metrics?.memUsage || 0))
-        )[0];
-        return { nodeId: fallback.nodeId, address: fallback.address };
-    }
-
-    // Pick the node with the lowest score (lightest load)
-    const best = scored[0].node;
-    return { nodeId: best.nodeId, address: best.address };
 }
+
+/**
+ * Start the scheduler loop.
+ */
+function start() {
+    console.log('[Scheduler] Starting background loop');
+    schedulerTimer = setInterval(scheduleAll, 5000);
+}
+
+/**
+ * Stop the scheduler loop.
+ */
+function stop() {
+    if (schedulerTimer) clearInterval(schedulerTimer);
+}
+
+/**
+
 
 /**
  * Return scheduler scores for all Ready nodes (used by GET /api/cluster/scheduler).
@@ -114,4 +141,4 @@ async function getNodeScores() {
         .sort((a, b) => a.score - b.score); // Best first
 }
 
-module.exports = { selectNode, getNodeScores };
+module.exports = { start, stop, getNodeScores };

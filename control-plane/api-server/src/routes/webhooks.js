@@ -1,8 +1,6 @@
 const router = require('express').Router();
 const Deployment = require('../models/Deployment');
 const Event = require('../models/Event');
-const deploymentsRouter = require('./deployments');
-const { triggerGitBuild } = deploymentsRouter;
 
 // POST /api/webhooks/github/:id
 router.post('/github/:id', async (req, res) => {
@@ -60,10 +58,6 @@ router.post('/github/:id', async (req, res) => {
             message: `GitHub webhook triggered redeploy. Pulling latest code and rebuilding in background...`,
             involvedObject: { kind: 'Deployment', name: deployment.name }
         });
-
-        // Trigger background build
-        const updatedDep = await Deployment.findById(deployment._id);
-        setImmediate(() => triggerGitBuild(updatedDep).catch(e => console.error('[Webhook] Git Build Error:', e.message)));
 
         res.json({ success: true, message: 'Git rebuild and redeployment successfully triggered in background', data: updatedDep });
     } catch (err) {

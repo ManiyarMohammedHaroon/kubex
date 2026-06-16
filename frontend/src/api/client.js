@@ -105,8 +105,7 @@ export const removeCustomDomain = (id, domain) => API.delete(`/deployments/${id}
 
 /** DELETE /deployments/:id — terminate a deployment and remove all its containers */
 export const deleteDeployment = (id) => API.delete(`/deployments/${id}`);
-
-/** POST /deployments/:id/rebalance — redistribute containers across nodes */
+export const updateEnvVars = (id, envVars) => API.put(`/deployments/${id}/env`, { envVars });
 export const rebalanceDeployment = (id) => API.post(`/deployments/${id}/rebalance`);
 
 /** POST /deployments/:id/share — Share deployment with a client email */
@@ -162,10 +161,15 @@ export const triggerChaosKill = (nodeUrl) => axios.post(`${nodeUrl}/chaos/kill`)
  */
 export const getLogs = (id) => API.get(`/logs/${id}`);
 
+/** POST /logs/:deploymentId/:containerId/analyze — Send logs to AI for debugging */
+export const analyzeLogs = (deploymentId, containerId, logs) => 
+    API.post(`/logs/${deploymentId}/${containerId}/analyze`, { logs });
+
 // ─── Workers ──────────────────────────────────────────────────────────────────
 
 /** POST /workers/provision — triggers the API server to spawn a new worker process locally */
-export const spawnWorker = () => API.post('/workers/provision');
+export const provisionWorker = (type = 'local') => API.post('/workers/provision', { type });
+export const spawnWorker = provisionWorker;
 
 /** GET /system/images — list all local docker images */
 export const getImages = () => API.get('/system/images');

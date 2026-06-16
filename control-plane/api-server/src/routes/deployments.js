@@ -16,44 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const { exec, spawn } = require('child_process');
 
-/**
- * Bulletproof git clone using spawn and 'exit' event.
- * Fixes the issue on Windows where git spawns background daemons (like credential-manager or fsmonitor)
- * that keep stdout/stderr pipes open, causing child_process.exec() to hang forever.
- */
-const spawnGitClone = (branch, url, targetPath) => {
-    return new Promise((resolve, reject) => {
-        const git = spawn('git', [
-            '-c', 'credential.helper=', 
-            '-c', 'core.fsmonitor=false', 
-            'clone', '--depth', '1', 
-            '-b', branch, 
-            url, targetPath
-        ], {
-            env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
-            windowsHide: true
-        });
 
-        let errOut = '';
-        if (git.stderr) {
-            git.stderr.on('data', data => { errOut += data.toString(); });
-        }
-
-        // 'exit' fires as soon as the main git.exe process dies, ignoring any background children.
-        git.on('exit', (code) => {
-            if (code === 0) resolve();
-            else reject(new Error(errOut || `Git clone exited with code ${code}`));
-        });
-        
-        git.on('error', (err) => reject(err));
-        
-        // Safety timeout (120s)
-        setTimeout(() => {
-            try { git.kill(); } catch (e) {}
-            reject(new Error("Git clone timed out after 120s"));
-        }, 120000);
-    });
-};
 
 const Deployment = require('../models/Deployment');
 const Event = require('../models/Event');
@@ -64,262 +27,8 @@ const auth = require('../middleware/auth');
 
 // ─── HELPER FUNCTIONS ────────────────────────────────────────────────────────
 
-const ensureDockerfile = (dir, backendPort, envVars = []) => {
-    backendPort = backendPort || 3000;
-    const dfPath = path.join(dir, 'Dockerfile');
-    const isKubexGen = fs.existsSync(dfPath) && fs.readFileSync(dfPath, 'utf8').includes('# KUBEX-GENERATED');
-    if (fs.existsSync(dfPath) && !isKubexGen) return; // user owns this Dockerfile
 
-    const header = '# KUBEX-GENERATED\n';
-    let content = '';
-    
-    // Convert KUBEX envVars into Dockerfile ARG and ENV lines
-    const buildEnvLines = [];
-    if (envVars && envVars.length > 0) {
-        for (const ev of envVars) {
-            if (ev.key) {
-                buildEnvLines.push(`ARG ${ev.key}`);
-                buildEnvLines.push(`ENV ${ev.key}=$${ev.key}`);
-            }
-        }
-    }
-    
-    if (fs.existsSync(path.join(dir, 'package.json'))) {
-        const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-        const hasVite = !!(pkg.dependencies?.vite || pkg.devDependencies?.vite);
-        if (hasVite) {
-            // Vite frontend: multi-stage build + nginx with runtime envsubst
-            const lines = [
-                'FROM node:18-alpine AS build',
-                'WORKDIR /app',
-                'COPY package*.json ./',
-                'RUN npm install',
-                'COPY . .',
-                'ARG VITE_API_URL=""',
-                'ENV VITE_API_URL=$VITE_API_URL',
-                ...buildEnvLines,
-                'RUN npm run build',
-                'RUN find dist -type f -name "*.js" -exec sed -i "s|http://localhost:5000||g" {} +',
-                '',
-                'FROM nginx:alpine',
-                'RUN apk add --no-cache gettext',
-                'COPY --from=build /app/dist /usr/share/nginx/html',
-                'ENV API_PORT=80',
-                `RUN mkdir -p /etc/nginx/templates && printf 'server { listen 80; location / { root /usr/share/nginx/html; try_files $uri $uri/ /index.html; } location /api/ { proxy_pass http://$API_BACKEND:$API_PORT; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_set_header Host $host; } }' > /etc/nginx/templates/default.conf.template`,
-                'EXPOSE 80',
-                'CMD envsubst \'\\$API_BACKEND \\$API_PORT\' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g \'daemon off;\'',
-            ];
-            content = header + lines.join('\n');
-        } else {
-            // Node.js backend
-            const startScript = pkg.scripts?.start ? 'npm start' : 'node server.js';
-            const exposePort = backendPort || 5000;
-            content = header + [
-                'FROM node:20-alpine',
-                'WORKDIR /app',
-                'COPY package*.json ./',
-                'RUN npm install',
-                'COPY . .',
-                ...buildEnvLines,
-                `EXPOSE ${exposePort}`,
-                `CMD ${startScript}`,
-            ].join('\n');
-        }
-    } else if (fs.existsSync(path.join(dir, 'index.html'))) {
-        content = header + 'FROM nginx:alpine\nCOPY . /usr/share/nginx/html\nEXPOSE 80';
-    }
-    if (content) {
-        console.log(`[FolderDeploy] ${isKubexGen ? 'Updating' : 'Generating'} Dockerfile for: ${dir}`);
-        fs.writeFileSync(dfPath, content);
-    }
-};
 
-const triggerGitBuild = async (dep) => {
-    const buildsLogDir = path.join(__dirname, '..', 'logs', 'builds');
-    if (!fs.existsSync(buildsLogDir)) {
-        fs.mkdirSync(buildsLogDir, { recursive: true });
-    }
-    const logFilePath = path.join(buildsLogDir, `${dep._id}.log`);
-    
-    // Clear any previous logs
-    fs.writeFileSync(logFilePath, `🧪 KUBEX Git Build Started for "${dep.name}"\n`);
-    
-    const writeLog = (msg) => {
-        fs.appendFileSync(logFilePath, `[${new Date().toLocaleTimeString()}] ${msg}\n`);
-        console.log(`[GitBuild - ${dep.name}] ${msg}`);
-    };
-
-    // Prepare workspace directory
-    const tempBuildsDir = path.join(__dirname, '..', '..', 'temp_git_builds');
-    if (!fs.existsSync(tempBuildsDir)) {
-        fs.mkdirSync(tempBuildsDir, { recursive: true });
-    }
-    // Use unique workspace subdirectory per-build to avoid race conditions
-    const workspacePath = path.join(tempBuildsDir, `${dep._id.toString()}_${Date.now()}`);
-    
-    const cleanWorkspace = () => {
-        try {
-            if (fs.existsSync(workspacePath)) {
-                fs.rmSync(workspacePath, { recursive: true, force: true });
-                writeLog('Cleaned up build workspace folder.');
-            }
-        } catch (err) {
-            writeLog(`⚠️ Workspace cleanup warning: ${err.message}`);
-        }
-    };
-
-    // Construct clone URL
-    let cloneUrl = dep.gitRepository;
-    if (dep.gitToken) {
-        if (cloneUrl.startsWith('https://')) {
-            cloneUrl = `https://${dep.gitToken}@${cloneUrl.substring(8)}`;
-        }
-    }
-
-    writeLog(`Cloning repository "${dep.gitRepository}" (branch: "${dep.gitBranch}")...`);
-    
-    try {
-        const { execSync } = require('child_process');
-        execSync(`git -c credential.helper= -c core.fsmonitor=false clone --depth 1 -b ${dep.gitBranch} "${cloneUrl}" "${workspacePath}"`, {
-            stdio: 'ignore',
-            env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
-            windowsHide: true
-        });
-        writeLog('✅ Repository cloned successfully.');
-    } catch (error) {
-        writeLog(`❌ Git clone failed:\n${error.message}`);
-        cleanWorkspace();
-        await Deployment.findByIdAndUpdate(dep._id, { $set: { status: 'Failed' } });
-        await Event.create({
-            type: 'Error', reason: 'GitCloneFailed',
-            message: `Git clone failed for "${dep.name}". Check build logs.`,
-            involvedObject: { kind: 'Deployment', name: dep.name }
-        });
-        return;
-    }
-
-    try {
-        // App Type and Port Detection
-        writeLog('Analyzing codebase type & port requirements...');
-        const buildContextPath = dep.gitSubfolder ? path.join(workspacePath, dep.gitSubfolder) : workspacePath;
-        writeLog(`Build Context path resolved to: ${buildContextPath}`);
-
-        let port = dep.containerPort || 80;
-        const pkgPath = path.join(buildContextPath, 'package.json');
-        
-        if (fs.existsSync(pkgPath)) {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-            const hasVite = !!(pkg.dependencies?.vite || pkg.devDependencies?.vite);
-            if (hasVite) {
-                writeLog('Detected App Type: React (Vite)');
-                port = 80;
-            } else {
-                writeLog('Detected App Type: Node.js Backend');
-                port = dep.containerPort || 3000;
-            }
-        } else if (fs.existsSync(path.join(buildContextPath, 'index.html'))) {
-            writeLog('Detected App Type: Static Web Page');
-            port = 80;
-        }
-
-        // Write/Generate Dockerfile
-        writeLog(`Checking Dockerfile in cloned source...`);
-        ensureDockerfile(buildContextPath, port, dep.envVars);
-        
-        const dfPathFinal = path.join(buildContextPath, 'Dockerfile');
-        if (!fs.existsSync(dfPathFinal)) {
-            throw new Error('Could not auto-generate Dockerfile. Add a Dockerfile manually.');
-        } else {
-            // Smart patch: upgrade node:18 to node:20 to fix crypto bugs
-            let dContent = fs.readFileSync(dfPathFinal, 'utf8');
-            if (dContent.includes('FROM node:18') && dContent.includes('server.js')) {
-                dContent = dContent.replace(/FROM node:18/g, 'FROM node:20');
-                fs.writeFileSync(dfPathFinal, dContent);
-                writeLog('âš¡ Auto-patched user Dockerfile from Node 18 to Node 20 for MongoDB compatibility.');
-            }
-        }
-
-        writeLog('✅ Dockerfile verified.');
-        writeLog(`STARTING DOCKER BUILD: "${dep.image}"...`);
-
-        // Convert dep.envVars to --build-arg flags
-        let buildArgsFlags = '';
-        if (dep.envVars && dep.envVars.length > 0) {
-            for (const ev of dep.envVars) {
-                if (ev.key) {
-                    // escape double quotes in value if any
-                    const val = (ev.value || '').replace(/"/g, '\\"');
-                    buildArgsFlags += ` --build-arg ${ev.key}="${val}"`;
-                }
-            }
-        }
-
-        // Compile logs inside the Docker build process
-        const buildProcess = exec(`docker build ${buildArgsFlags} -t ${dep.image} "${buildContextPath}"`, { maxBuffer: 1024 * 1024 * 50 });
-
-        buildProcess.stdout.on('data', (data) => {
-            fs.appendFileSync(logFilePath, data);
-        });
-        buildProcess.stderr.on('data', (data) => {
-            fs.appendFileSync(logFilePath, data);
-        });
-
-        buildProcess.on('close', async (code) => {
-            cleanWorkspace();
-
-            if (code !== 0) {
-                writeLog(`❌ Docker build failed with exit code: ${code}`);
-                await Deployment.findByIdAndUpdate(dep._id, { $set: { status: 'Failed' } });
-                await Event.create({
-                    type: 'Error', reason: 'GitBuildFailed',
-                    message: `Docker build failed for "${dep.name}". Check build logs.`,
-                    involvedObject: { kind: 'Deployment', name: dep.name }
-                });
-                return;
-            }
-
-            writeLog('✅ Docker build completed successfully!');
-            writeLog(`Pushing image "${dep.image}" to Docker Hub...`);
-            
-            const pushProcess = exec(`docker push ${dep.image}`);
-            pushProcess.stdout.on('data', (data) => fs.appendFileSync(logFilePath, data));
-            pushProcess.stderr.on('data', (data) => fs.appendFileSync(logFilePath, data));
-            
-            pushProcess.on('close', async (pCode) => {
-                if (pCode !== 0) {
-                    writeLog(`❌ Docker push failed with exit code: ${pCode}`);
-                    await Deployment.findByIdAndUpdate(dep._id, { $set: { status: 'Failed' } });
-                    await Event.create({
-                        type: 'Error', reason: 'PushFailed',
-                        message: `Docker push failed for "${dep.name}". Ensure credentials are set.`,
-                        involvedObject: { kind: 'Deployment', name: dep.name }
-                    });
-                } else {
-                    writeLog('✅ Docker image pushed successfully!');
-                    finishGitDeploy(dep, logFilePath);
-                }
-            });
-        });
-    } catch (innerErr) {
-        writeLog(`❌ Error during build setup: ${innerErr.message}`);
-        cleanWorkspace();
-        await Deployment.findByIdAndUpdate(dep._id, { $set: { status: 'Failed' } });
-    }
-};
-
-const finishGitDeploy = async (dep, logFilePath) => {
-    fs.appendFileSync(logFilePath, `[${new Date().toLocaleTimeString()}] ✅ Build successful. Deploying containers in cluster...\n`);
-    await Deployment.findByIdAndUpdate(dep._id, { $set: { status: 'Pending' } });
-    await Event.create({
-        type: 'Normal', reason: 'BuildComplete',
-        message: `Git build complete. Starting "${dep.name}"...`,
-        involvedObject: { kind: 'Deployment', name: dep.name }
-    });
-    const fresh = await Deployment.findById(dep._id);
-};
-
-// Protect all deployment routes under this router
-router.use(auth);
 
 // --- POST /api/deployments/worker/status --------------------------------
 // Called by the Worker Agent to update the status of a deployment and provide the localtunnel URL.
@@ -332,20 +41,63 @@ router.post('/worker/status', async (req, res) => {
         const node = await Node.findOne({ token });
         if (!node) return res.status(403).json({ success: false, error: 'Forbidden' });
 
-        const { depId, status, tunnelUrl } = req.body;
+        const { depId, status, tunnelUrl, containerInfo, error } = req.body;
         const updateDoc = { status };
         if (tunnelUrl) updateDoc.tunnelUrl = tunnelUrl;
+        if (error) updateDoc.lastError = error;
+        if (status === 'Running') updateDoc.lastError = ''; // Clear error on success
         
-        // Update actualReplicas based on status
-        if (status === 'Running') updateDoc.actualReplicas = 1; // Assuming 1 replica for local tunnels
-        if (status === 'Failed' || status === 'Pending') updateDoc.actualReplicas = 0;
+        let mongoUpdate = { $set: updateDoc };
 
-        await Deployment.findByIdAndUpdate(depId, { $set: updateDoc });
+        if (status === 'Running' && containerInfo) {
+            mongoUpdate.$push = { containers: containerInfo };
+            mongoUpdate.$inc = { actualReplicas: 1 };
+        } else if (status === 'Stopped' && containerInfo) {
+            mongoUpdate.$pull = { containers: { containerId: containerInfo.containerId } };
+            mongoUpdate.$inc = { actualReplicas: -1 };
+        } else if (status === 'Failed' || status === 'Pending') {
+            mongoUpdate.$set.actualReplicas = 0;
+            mongoUpdate.$set.containers = [];
+        }
+
+        await Deployment.findByIdAndUpdate(depId, mongoUpdate);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
+// ─── POST /api/deployments/:id/build-complete ────────────────────────────────
+// Called by the worker node when it finishes building the Docker image
+router.post('/:id/build-complete', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization || '';
+        const token = authHeader.replace('Bearer ', '').trim();
+        const Node = require('../models/Node');
+        const node = await Node.findOne({ token });
+        if (!node) return res.status(403).json({ success: false, error: 'Forbidden' });
+
+        const { image } = req.body;
+        if (!image) return res.status(400).json({ success: false, error: 'image tag is required' });
+
+        const dep = await Deployment.findByIdAndUpdate(req.params.id, {
+            $set: { 
+                status: 'Pending',
+                image: image,
+                lastError: null
+            }
+        }, { new: true });
+
+        if (!dep) return res.status(404).json({ success: false, error: 'Deployment not found' });
+        
+        res.json({ success: true, data: dep });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Protect all deployment routes under this router
+router.use(auth);
 
 // --- GET /api/deployments -----------------------------------------------
 router.get('/', async (req, res) => {
@@ -387,7 +139,8 @@ router.post('/', async (req, res) => {
             cpuThresholdUp = 80, cpuThresholdDown = 20,
             staticHostPort = '', containerPort = 80,
             gitRepository = '', gitBranch = 'main', gitToken = '', autoDeploy = true,
-            dockerHubUsername = '', healthCheck = { enabled: false, path: '/health', maxRetries: 3 }
+            dockerHubUsername = '', healthCheck = { enabled: false, path: '/health', maxRetries: 3 },
+            environment = 'local'
         } = req.body;
 
         if (autoscalingEnabled && cpuThresholdUp <= cpuThresholdDown) {
@@ -470,7 +223,10 @@ router.post('/', async (req, res) => {
                 image: frontendImage,
                 desiredReplicas,
                 resourceLimits: { cpu: resourceLimits.cpu || '0.5', memory: resourceLimits.memory || '128m' },
-                envVars: [...(envVars || []), { key: 'API_BACKEND', value: `${name}-backend` }], // AUTO-CONNECT TO BACKEND
+                envVars: [
+                    { key: 'API_BACKEND', value: `${name}-backend` },
+                    { key: 'API_PORT', value: '3000' }
+                ], // AUTO-CONNECT TO BACKEND
                 previewDomain: `preview-${name}-frontend.localhost:8080`,
                 autoscalingEnabled, minReplicas, maxReplicas,
                 cpuThresholdUp, cpuThresholdDown,
@@ -481,7 +237,8 @@ router.post('/', async (req, res) => {
                 viewers: req.body.viewers || [],
                 gitRepository, gitBranch, gitToken, webhookSecret, autoDeploy,
                 gitSubfolder: frontendFolder, // Use actual folder name from repo
-                dockerHubUsername, healthCheck
+                dockerHubUsername, healthCheck,
+                environment
             });
 
             // Create Backend Deployment
@@ -502,7 +259,8 @@ router.post('/', async (req, res) => {
                 viewers: req.body.viewers || [],
                 gitRepository, gitBranch, gitToken, webhookSecret, autoDeploy,
                 gitSubfolder: backendFolder, // Use actual folder name from repo
-                dockerHubUsername, healthCheck
+                dockerHubUsername, healthCheck,
+                environment
             });
 
             await Event.create({
@@ -517,8 +275,7 @@ router.post('/', async (req, res) => {
                 involvedObject: { kind: 'Deployment', name: `${name}-backend` },
             });
 
-
-
+            // The status is 'Building', so the Worker Agent will automatically pick this up!
             return res.status(201).json({ success: true, data: [frontendDeployment, backendDeployment] });
         } else {
             console.log(`[API Scanner] Standard repository structure detected.`);
@@ -552,7 +309,8 @@ router.post('/', async (req, res) => {
                 viewers: req.body.viewers || [],
                 gitRepository, gitBranch, gitToken, webhookSecret, autoDeploy,
                 gitSubfolder: '',
-                dockerHubUsername, healthCheck
+                dockerHubUsername, healthCheck,
+                environment
             });
 
             await Event.create({
@@ -561,8 +319,7 @@ router.post('/', async (req, res) => {
                 involvedObject: { kind: 'Deployment', name },
             });
 
-
-
+            // The status is 'Building', so the Worker Agent will automatically pick this up!
             return res.status(201).json({ success: true, data: [deployment] });
         }
     } catch (err) {
@@ -665,12 +422,28 @@ router.delete('/:id', async (req, res) => {
         // 2. Perform heavy cleanup in the background
         setImmediate(async () => {
             try {
+                // Save image to images collection before deleting the deployment record
+                const Image = require('../models/Image');
+                const [repo, tag = 'latest'] = dep.image.split(':');
+                
+                const existingImg = await Image.findOne({ repo, tag, owner: dep.owner });
+                if (!existingImg) {
+                    await Image.create({
+                        repo,
+                        tag,
+                        imageId: dep.containers?.[0]?.containerId?.slice(0, 12) || 'unknown',
+                        size: dep.resourceLimits?.memory || '128m',
+                        owner: dep.owner
+                    });
+                    console.log(`[API] Saved deleted deployment image ${dep.image} to Image Library for user ${dep.owner}`);
+                }
+
                 // Finally delete the record
                 await Deployment.deleteOne({ _id: dep._id });
 
                 await Event.create({
                     type: 'Normal', reason: 'DeploymentDeleted',
-                    message: `Deployment "${dep.name}" deleted. ${allContainers.length} container(s) removed.`,
+                    message: `Deployment "${dep.name}" deleted. ${dep.containers ? dep.containers.length : 0} container(s) removed.`,
                     involvedObject: { kind: 'Deployment', name: dep.name },
                 });
             } catch (bgErr) {
@@ -742,9 +515,12 @@ router.post('/:id/redeploy', async (req, res) => {
             involvedObject: { kind: 'Deployment', name: dep.name } 
         });
 
-        const updatedDep = await Deployment.findById(dep._id);
-        setImmediate(() => triggerGitBuild(updatedDep));
-        return res.json({ success: true, message: 'Git re-deployment started in background', data: updatedDep });
+        const updatedDep = await Deployment.findByIdAndUpdate(
+            dep._id,
+            { $set: { status: 'Building', lastError: '' } },
+            { new: true }
+        );
+        res.json({ success: true, message: 'Git re-deployment started in background', data: updatedDep });
     } catch (err) {
         console.error('[API] Redeploy Error:', err);
         res.status(500).json({ success: false, error: err.message });
@@ -792,7 +568,6 @@ router.delete('/:id/share/:userId', async (req, res) => {
     }
 });
 
-router.triggerGitBuild = triggerGitBuild;
 // POST /:id/domains - Add a custom domain
 router.post('/:id/domains', async (req, res) => {
     try {
@@ -834,5 +609,37 @@ router.delete('/:id/domains/:domain', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// PUT /:id/env - Update environment variables
+router.put('/:id/env', async (req, res) => {
+    try {
+        const { envVars } = req.body;
+        if (!Array.isArray(envVars)) return res.status(400).json({ error: 'envVars must be an array' });
+
+        const dep = await Deployment.findById(req.params.id);
+        if (!dep) return res.status(404).json({ error: 'Deployment not found' });
+        
+        // Authorization check
+        if (dep.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        dep.envVars = envVars;
+        
+        // Force the Worker Agent to completely rebuild this deployment with the new env vars
+        dep.status = 'Pending';
+        dep.actualReplicas = 0;
+        dep.containers = []; // Wiping containers forces Reconciler to GC them immediately
+        dep.lastError = '';
+        
+        await dep.save();
+
+        res.json({ success: true, data: dep });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 
 module.exports = router;

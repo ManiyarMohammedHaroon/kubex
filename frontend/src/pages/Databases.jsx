@@ -96,7 +96,7 @@ export default function Databases() {
                 <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
             ) : databases.length === 0 ? (
                 <div className="empty-state">
-                    <div className="empty-icon">🗄️</div>
+                    <div className="empty-icon" style={{ opacity: 0.5 }}>DB</div>
                     <h3>No databases provisioned</h3>
                     <p>Create a Managed Database to link it to your Deployments.</p>
                 </div>
@@ -106,14 +106,7 @@ export default function Databases() {
                         <div key={db._id} className="card" style={{ padding: 20 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-                                    <div style={{
-                                        width: 40, height: 40, borderRadius: 8,
-                                        background: 'rgba(255,255,255,0.05)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: 20
-                                    }}>
-                                        {db.type === 'mongo' ? '🍃' : db.type === 'postgres' ? '🐘' : db.type === 'mysql' ? '🐬' : '⚡'}
-                                    </div>
+                                    <div className="db-logo" style={{ fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, background: 'var(--bg-secondary)', borderRadius: 12 }}>{db.type.substring(0,2).toUpperCase()}</div>
                                     <div>
                                         <div style={{ fontWeight: 600, fontSize: 16 }}>
                                             {db.name} 
@@ -171,14 +164,14 @@ export default function Databases() {
                                             <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>Studio Username</div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <code style={{ color: '#fbbf24', fontSize: 13 }}>{db.credentials.username}</code>
-                                                <button className="btn btn-icon" onClick={() => copyToClipboard(db.credentials.username)} style={{ padding: 2, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>📋</button>
+                                                <button className="btn btn-icon" onClick={() => copyToClipboard(db.credentials.username)} style={{ padding: 2, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>Copy</button>
                                             </div>
                                         </div>
                                         <div style={{ flex: 1 }}>
                                             <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>Studio Password</div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <code style={{ color: '#fbbf24', fontSize: 13 }}>{db.credentials.password}</code>
-                                                <button className="btn btn-icon" onClick={() => copyToClipboard(db.credentials.password)} style={{ padding: 2, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>📋</button>
+                                                <button className="btn btn-icon" onClick={() => copyToClipboard(db.credentials.password)} style={{ padding: 2, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>Copy</button>
                                             </div>
                                         </div>
                                     </div>

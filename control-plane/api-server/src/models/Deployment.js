@@ -48,6 +48,13 @@ const deploymentSchema = new mongoose.Schema(
         // How many replicas are actually running right now (maintained by Reconciler)
         actualReplicas: { type: Number, default: 0 },
 
+        // Map of nodeId -> assigned replica count. Maintained by SchedulerService.
+        nodeAssignments: {
+            type: Map,
+            of: Number,
+            default: {}
+        },
+
         // Per-container resource caps applied via Docker's HostConfig
         resourceLimits: {
             cpu: { type: String, default: '0.5' },   // CPU fraction — 0.5 means half a core (NanoCpus = val * 1e9)
@@ -81,12 +88,28 @@ const deploymentSchema = new mongoose.Schema(
         // The path to the source folder if this was deployed from a local folder
         folderPath: { type: String, default: '' },
 
+        // The Docker image tag if the deployment uses a pre-built image (e.g. 'mongo:latest')
+        // or the image tag pushed to Docker Hub by the Builder node.
+        image: { type: String, default: '' },
+
         // Current lifecycle status (updated by Reconciler and AutoScaler)
         status: {
             type: String,
             enum: ['Pending', 'Running', 'Degraded', 'Scaling', 'Terminating', 'Failed', 'Building'],
             default: 'Pending',
         },
+
+        // Target environment this deployment must run in
+        environment: {
+            type: String,
+            enum: ['local', 'cloud'],
+            default: 'local'
+        },
+
+        lastError: { type: String, default: '' },
+        
+        // Auto-generated tunnel URL for this deployment
+        tunnelUrl: { type: String, default: '' },
 
         // Live list of containers currently managed for this deployment
         containers: [containerSchema],

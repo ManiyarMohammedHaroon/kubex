@@ -71,7 +71,7 @@ const CustomDomainModal = ({ deployment, onClose, onRefresh }) => {
                             {deployment.customDomains.map(d => (
                                 <div key={d} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-primary)', padding: '10px 14px', borderRadius: 6, border: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ color: 'var(--accent-green)' }}>🌐</span>
+                                        <span style={{ color: 'var(--accent-green)', fontWeight: 'bold' }}>WWW</span>
                                         <span style={{ fontWeight: 500 }}>{d}</span>
                                     </div>
                                     <button 

@@ -37,6 +37,15 @@ const userSchema = new mongoose.Schema(
             enum: ['admin', 'developer', 'viewer'],
             default: 'developer',
         },
+        dockerHubUsername: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        dockerHubToken: {
+            type: String,
+            default: '',
+        },
         tenantId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',

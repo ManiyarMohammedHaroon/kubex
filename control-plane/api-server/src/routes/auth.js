@@ -38,6 +38,10 @@ router.post('/signup', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Username already taken.' });
         }
 
+        // Check if this is the first user in the system
+        const userCount = await User.countDocuments();
+        let finalRole = (userCount === 0) ? 'admin' : role;
+
         // Pre-allocate user ID to make tenantId assignment elegant
         const userId = new mongoose.Types.ObjectId();
         let finalTenantId = userId; // Defaults to self for developer
@@ -67,7 +71,7 @@ router.post('/signup', async (req, res) => {
             username: username.trim(),
             email: email.toLowerCase(),
             password,
-            role,
+            role: finalRole,
             tenantId: finalTenantId
         });
 

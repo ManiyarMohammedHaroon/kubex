@@ -62,7 +62,7 @@ export default function Signup({ onSignupSuccess }) {
                 <form className="auth-form" onSubmit={handleSubmit}>
                     {error && (
                         <div className="auth-error">
-                            <span style={{ fontSize: '16px' }}>⚠️</span>
+                            <span style={{ fontSize: '16px' }}>Error:</span>
                             <span>{error}</span>
                         </div>
                     )}

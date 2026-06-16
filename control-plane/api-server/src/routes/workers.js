@@ -9,6 +9,9 @@ const router = require('express').Router();
 const Node = require('../models/Node');
 const { spawn } = require('child_process');
 const path = require('path');
+const auth = require('../middleware/auth');
+
+router.use(auth);
 
 // Helper to get next available worker port starting from 4001
 async function getNextWorkerPort() {
@@ -43,7 +46,8 @@ async function getNextWorkerId() {
 // ─── GET /api/workers/list ────────────────────────────────────────────────────
 router.get('/list', async (req, res) => {
     try {
-        const nodes = await Node.find().sort({ nodeId: 1 });
+        const query = req.user.role === 'admin' ? {} : { owner: req.user._id };
+        const nodes = await Node.find(query).sort({ nodeId: 1 });
         const workers = nodes.map(n => {
             const match = n.address.match(/:(\d+)$/);
             const port = match ? match[1] : 'unknown';
@@ -64,25 +68,44 @@ router.get('/list', async (req, res) => {
 });
 
 // ─── POST /api/workers/provision ──────────────────────────────────────────────
+// POST /api/workers/provision
 // Provision a new remote worker node
 router.post('/provision', async (req, res) => {
+    if (req.user.role === 'viewer') {
+        return res.status(403).json({ success: false, error: 'Permission denied. Viewers cannot provision workers.' });
+    }
     try {
+        const { type } = req.body; // 'local' or 'remote'
         const WorkerService = require('../services/WorkerService');
-        const { workerId, token } = await WorkerService.provisionWorker();
+        const ownerId = req.user ? req.user._id : null;
+        const { workerId, token } = await WorkerService.provisionWorker(ownerId, type || 'local');
 
-        // Control plane public IP or domain (for now use req.headers.host)
-        const controlPlaneUrl = `${req.protocol}://${req.get('host')}`;
+        if (type === 'remote') {
+            // Provide the installation script for AWS / remote servers
+            // We use standard bash for remote linux servers
+            const apiHost = req.headers.host.includes('localhost') 
+                ? 'http://<YOUR_API_IP>:3001' // Placeholder for production
+                : `http://${req.headers.host}`;
+            
+            const installCommand = `docker run -d --name kubex-${workerId} --restart unless-stopped -e NODE_ID=${workerId} -e NODE_ENV=cloud -e KUBEX_TOKEN=${token} -e API_SERVER_URL=${apiHost} -v /var/run/docker.sock:/var/run/docker.sock kubex-worker-agent:latest`;
 
-        const installCommand = `KUBEX_TOKEN=${token} NODE_ID=${workerId} API_SERVER_URL=${controlPlaneUrl} npm run start`;
-
-        res.json({
-            success: true,
-            message: `Worker provisioned: ${workerId}`,
-            workerId,
-            token,
-            installCommand,
-            note: 'Run the installation command on your remote server to register this worker.',
-        });
+            res.json({
+                success: true,
+                message: `Remote worker provisioned: ${workerId}`,
+                workerId,
+                token,
+                installCommand,
+                note: 'Run this command on your remote server to connect it.',
+            });
+        } else {
+            res.json({
+                success: true,
+                message: `Worker automatically provisioned: ${workerId}`,
+                workerId,
+                token,
+                note: 'The worker has been automatically started in the background.',
+            });
+        }
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

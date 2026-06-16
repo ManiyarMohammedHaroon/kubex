@@ -17,8 +17,13 @@ const mongoose = require('mongoose');
  * On failure, logs the error and exits the process.
  */
 const connectDB = async () => {
+  mongoose.set('bufferCommands', false);
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI);
+    const conn = await mongoose.connect(process.env.MONGO_URI, {
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        family: 4 // Force IPv4
+    });
     console.log(`[DB] MongoDB connected: ${conn.connection.host}`);
   } catch (err) {
     console.error(`[DB] Connection error: ${err.message}`);

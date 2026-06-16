@@ -28,7 +28,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
     getDeployments, createDeployment, scaleDeployment,
     deleteDeployment, patchDeployment, rebalanceDeployment,
-    redeployDeployment, getBuildLogs, shareDeployment, revokeDeploymentAccess
+    redeployDeployment, getBuildLogs, shareDeployment, revokeDeploymentAccess, updateEnvVars
 } from '../api/client';
 import CustomDomainModal from '../components/CustomDomainModal';
 
@@ -78,7 +78,8 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
         autoDeploy: true,
         dockerHubUsername: localStorage.getItem('kubex_dockerhub_username') || '',
         healthCheckEnabled: false,
-        healthCheckPath: '/health'
+        healthCheckPath: '/health',
+        environment: 'local'
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -118,7 +119,8 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
                 healthCheck: {
                     enabled: form.healthCheckEnabled,
                     path: form.healthCheckPath
-                }
+                },
+                environment: form.environment
             });
             
             localStorage.setItem('kubex_dockerhub_username', form.dockerHubUsername);
@@ -133,10 +135,10 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
     return (
         // Clicking the overlay (not the modal card) closes the modal
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <div className="modal">
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontSize: 24 }}>🐙</span> Create Git Deployment</h2>
+            <div className="modal" style={{ maxWidth: 650 }}>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>Create Git Deployment</h2>
                 <div style={{ color: 'var(--text-muted)', fontSize: '11.5px', marginBottom: 20, background: 'rgba(255,255,255,0.02)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--glass-border)', lineHeight: 1.5 }}>
-                    💡 <strong>KUBEX Git Engine</strong> automatically scans your repo for <code>frontend/</code> and <code>backend/</code> subdirectories. If detected, they are split into separate dedicated containers automatically!
+                    <strong>Note:</strong> KUBEX Git Engine automatically scans your repo for <code>frontend/</code> and <code>backend/</code> subdirectories. If detected, they are split into separate dedicated containers automatically!
                 </div>
                 <form onSubmit={handleSubmit}>
                     <div className="form-group">
@@ -158,6 +160,38 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
                             placeholder="https://github.com/username/repo-name" 
                             required 
                         />
+                    </div>
+
+                    <div className="form-group" style={{ background: 'rgba(255,255,255,0.03)', padding: 15, borderRadius: 8, border: '1px solid var(--border)' }}>
+                        <label style={{ marginBottom: 10, display: 'block', fontWeight: 600 }}>Target Environment</label>
+                        <div style={{ display: 'flex', gap: 15 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', opacity: form.environment === 'local' ? 1 : 0.6 }}>
+                                <input 
+                                    type="radio" 
+                                    name="environment" 
+                                    value="local" 
+                                    checked={form.environment === 'local'} 
+                                    onChange={e => setForm(p => ({ ...p, environment: e.target.value }))} 
+                                />
+                                <div>
+                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Local Laptop</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Runs locally. Sleeps when laptop sleeps.</div>
+                                </div>
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', opacity: form.environment === 'cloud' ? 1 : 0.6 }}>
+                                <input 
+                                    type="radio" 
+                                    name="environment" 
+                                    value="cloud" 
+                                    checked={form.environment === 'cloud'} 
+                                    onChange={e => setForm(p => ({ ...p, environment: e.target.value }))} 
+                                />
+                                <div>
+                                    <div style={{ fontWeight: 600, color: '#60a5fa' }}>Cloud Server</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Runs on remote VPS. 24/7 Uptime.</div>
+                                </div>
+                            </label>
+                        </div>
                     </div>
 
                     <div className="form-row">
@@ -203,7 +237,7 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
                             <input type="checkbox" checked={form.autoDeploy} onChange={e => setForm(p => ({ ...p, autoDeploy: e.target.checked }))} />
                             <span className="toggle-slider" style={{ borderRadius: 16 }} />
                         </label>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-green)' }}>🐙 GitHub Webhook Auto Deploy on Push</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-green)' }}>GitHub Webhook Auto Deploy on Push</span>
                     </div>
 
                     <div className="form-row">
@@ -285,7 +319,7 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
                     <div className="form-actions">
                         <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
                         <button type="submit" className="btn btn-primary" disabled={loading}>
-                            {loading ? <span className="spinner" /> : '🚀 Deploy'}
+                            {loading ? <span className="spinner" /> : 'Deploy'}
                         </button>
                     </div>
                 </form>
@@ -324,7 +358,7 @@ function ScaleModal({ dep, onClose, onScale }) {
     return (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
             <div className="modal" style={{ maxWidth: 380 }}>
-                <h2>⚖ Scale "{dep.name}"</h2>
+                <h2>Scale "{dep.name}"</h2>
                 {/* Show current state so user has context before changing */}
                 <div style={{ color: 'var(--text-secondary)', fontSize: 13.5, marginBottom: 20 }}>
                     Current: <strong style={{ color: 'var(--text-primary)' }}>{dep.actualReplicas}</strong> running /
@@ -342,6 +376,81 @@ function ScaleModal({ dep, onClose, onScale }) {
                         {loading ? <span className="spinner" /> : 'Apply Scale'}
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+function EnvVarModal({ dep, onClose, onSave }) {
+    const [envVars, setEnvVars] = useState(dep.envVars || []);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const addEnvVar = () => setEnvVars([...envVars, { key: '', value: '' }]);
+    const updateEnvVar = (index, field, value) => {
+        const newVars = [...envVars];
+        newVars[index][field] = value;
+        setEnvVars(newVars);
+    };
+    const removeEnvVar = (index) => setEnvVars(envVars.filter((_, i) => i !== index));
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        try {
+            await onSave(dep._id, envVars);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+            <div className="modal card" style={{ width: 500, padding: 30 }}>
+                <h2 style={{ marginTop: 0, marginBottom: 20 }}>Edit Environment Variables</h2>
+                {error && <div className="error-message" style={{ marginBottom: 15, color: 'var(--accent-red)' }}>{error}</div>}
+                <form onSubmit={handleSubmit}>
+                    <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 15 }}>
+                        {envVars.length === 0 && <p style={{ fontSize: 14, color: 'var(--text-muted)' }}>No variables set.</p>}
+                        {envVars.map((ev, index) => (
+                            <div key={index} style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                                <input
+                                    type="text"
+                                    placeholder="KEY"
+                                    value={ev.key}
+                                    onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
+                                    style={{ flex: 1 }}
+                                    required
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="VALUE"
+                                    value={ev.value}
+                                    onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
+                                    style={{ flex: 2 }}
+                                    required
+                                />
+                                <button type="button" className="btn btn-danger btn-sm" onClick={() => removeEnvVar(index)} style={{ padding: '0 10px' }}>✕</button>
+                            </div>
+                        ))}
+                    </div>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={addEnvVar} style={{ marginBottom: 20 }}>+ Add Variable</button>
+                    
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>
+                        Saving will completely rebuild the Docker container. Expect 30-60 seconds of downtime.
+                    </p>
+
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                        <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+                        <button type="submit" className="btn btn-primary" disabled={loading}>
+                            {loading ? 'Saving...' : 'Save & Redeploy'}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     );
@@ -366,7 +475,7 @@ function BuildLogsModal({ dep, onClose }) {
                 }
             } catch (err) {
                 if (isMounted) {
-                    setLogs(prev => prev + `\n❌ Error streaming logs: ${err.message}`);
+                    setLogs(prev => prev + `\nError streaming logs: ${err.message}`);
                     setLoading(false);
                 }
             }
@@ -408,7 +517,7 @@ function BuildLogsModal({ dep, onClose }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
                     <div>
                         <h2 style={{ margin: 0, fontSize: 20, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>🖥 Build Console</span>
+                            <span>Build Console</span>
                             <span style={{ fontSize: 11, background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '2px 8px', borderRadius: 12, border: '1px solid rgba(16, 185, 129, 0.2)', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 'bold' }}>
                                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} className="pulse-glow" />
                                 {dep.status.toUpperCase()}
@@ -418,36 +527,24 @@ function BuildLogsModal({ dep, onClose }) {
                             Tracking deployment build for <strong>{dep.name}</strong>
                         </p>
                     </div>
-                    <button className="btn btn-secondary btn-sm" onClick={onClose} style={{ border: 'none', background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', padding: '4px 8px' }}>✕</button>
+                    <button className="btn btn-secondary btn-sm" onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', padding: '4px 8px' }}>✕</button>
                 </div>
 
-                <div 
-                    style={{ 
-                        height: 400, 
-                        background: '#090d16', 
-                        borderRadius: 12, 
-                        padding: 16, 
-                        overflowY: 'auto', 
-                        fontFamily: 'monospace', 
-                        fontSize: 12.5, 
-                        lineHeight: 1.6, 
-                        color: '#34d399', 
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        whiteSpace: 'pre-wrap',
-                        boxShadow: 'inset 0 0 20px rgba(0,0,0,0.8)'
-                    }}
-                >
+                <pre style={{
+                        background: 'rgba(255,255,255,0.5)', color: 'var(--text-primary)', border: '1px solid var(--border)', padding: 16, borderRadius: 8,
+                        overflowX: 'auto', fontSize: 13, maxHeight: '60vh', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace'
+                    }}>
                     {logs}
                     <div ref={logEndRef} />
-                </div>
+                </pre>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 15 }}>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         Console streams logs in real-time. Logs persist on success/fail.
                     </div>
                     <div style={{ display: 'flex', gap: 10 }}>
-                        <button className="btn btn-secondary btn-sm" onClick={copyToClipboard} style={{ fontSize: 11, background: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.1)', color: '#e2e8f0' }}>
-                            📋 Copy Logs
+                        <button className="btn btn-secondary btn-sm" onClick={copyToClipboard} style={{ fontSize: 11 }}>
+                            Copy Logs
                         </button>
                         <button className="btn btn-primary btn-sm" onClick={onClose} style={{ fontSize: 11 }}>
                             Close Console
@@ -467,6 +564,7 @@ export default function Deployments() {
     const [error, setError] = useState(null);
     const [showCreate, setShowCreate] = useState(false); // Controls CreateModal visibility
     const [scaleTarget, setScaleTarget] = useState(null);  // The deployment being scaled (or null)
+    const [envVarTarget, setEnvVarTarget] = useState(null); // The deployment being edited for env vars
     const [domainModalDep, setDomainModalDep] = useState(null); // The deployment being managed (or null)
     const [buildLogsTarget, setBuildLogsTarget] = useState(null); // The deployment whose build logs are being viewed
     const [shareModalDep, setShareModalDep] = useState(null);
@@ -524,6 +622,15 @@ export default function Deployments() {
     const handleScale = async (id, replicas) => {
         await scaleDeployment(id, replicas);
         fetchDeps();
+    };
+
+    const handleSaveEnv = async (depId, envVars) => {
+        try {
+            await updateEnvVars(depId, envVars);
+            fetchDeps();
+        } catch (err) {
+            throw new Error(err.response?.data?.error || err.message || 'Server error');
+        }
     };
 
     /** Confirm + delete a deployment (with a browser confirm dialog) */
@@ -613,7 +720,7 @@ export default function Deployments() {
 
             {/* ── Deployment Cards Grid ────────────────────────────────────────── */}
             {deps.length > 0 && (
-                <div className="nodes-grid">
+                <div className="deployments-grid">
                     {deps.map((dep) => (
                         <div key={dep._id} className="card deployment-card">
                             {/* Card header: name, image, and status badge */}
@@ -629,18 +736,44 @@ export default function Deployments() {
                                         </span>
                                     </span>
                                     <span className="deployment-image">{dep.image}</span>
-                                    {dep.gitRepository && (
-                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                            <span style={{ width: 'fit-content', fontSize: '9px', background: 'rgba(255, 255, 255, 0.08)', padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)', border: '1px solid var(--glass-border)', marginTop: 4, fontWeight: 'bold' }}>
-                                                🐙 {dep.gitBranch}
-                                            </span>
-                                            {dep.gitSubfolder && (
-                                                <span style={{ width: 'fit-content', fontSize: '9px', background: 'rgba(59, 130, 246, 0.12)', padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4, color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.25)', marginTop: 4, fontWeight: 'bold' }}>
-                                                    📁 Subfolder: {dep.gitSubfolder}
-                                                </span>
-                                            )}
+                                    {dep.lastError && (
+                                        <div style={{ 
+                                            padding: '8px 12px', 
+                                            background: 'rgba(239, 68, 68, 0.1)', 
+                                            border: '1px solid rgba(239, 68, 68, 0.2)', 
+                                            borderRadius: 6, 
+                                            color: 'var(--accent-red)', 
+                                            fontSize: '11.5px', 
+                                            fontFamily: 'monospace',
+                                            whiteSpace: 'pre-wrap',
+                                            wordBreak: 'break-word',
+                                            marginTop: 4
+                                        }}>
+                                            Error: {dep.lastError}
                                         </div>
                                     )}
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                        {Object.keys(dep.nodeAssignments || {}).length > 0 && (
+                                            <span style={{ width: 'fit-content', fontSize: '9px', background: 'rgba(245, 158, 11, 0.12)', padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4, color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.25)', fontWeight: 'bold' }}>
+                                                Worker: {Object.keys(dep.nodeAssignments).join(', ')}
+                                            </span>
+                                        )}
+                                        {dep.gitRepository && (
+                                            <>
+                                                <span style={{ width: 'fit-content', fontSize: '9px', background: dep.environment === 'cloud' ? 'rgba(96, 165, 250, 0.12)' : 'rgba(255, 255, 255, 0.08)', padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4, color: dep.environment === 'cloud' ? '#60a5fa' : 'var(--text-secondary)', border: `1px solid ${dep.environment === 'cloud' ? 'rgba(96, 165, 250, 0.25)' : 'var(--glass-border)'}`, fontWeight: 'bold', textTransform: 'capitalize' }}>
+                                                    {dep.environment || 'Local'}
+                                                </span>
+                                                <span style={{ width: 'fit-content', fontSize: '9px', background: 'rgba(255, 255, 255, 0.08)', padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)', border: '1px solid var(--glass-border)', fontWeight: 'bold' }}>
+                                                    Branch: {dep.gitBranch}
+                                                </span>
+                                                {dep.gitSubfolder && (
+                                                    <span style={{ width: 'fit-content', fontSize: '9px', background: 'rgba(59, 130, 246, 0.12)', padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4, color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.25)', fontWeight: 'bold' }}>
+                                                        Subfolder: {dep.gitSubfolder}
+                                                    </span>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                                 <span className={`badge badge-${STATUS_BADGE[dep.status] || 'gray'}`}>
                                     <span className="badge-dot" />
@@ -683,7 +816,6 @@ export default function Deployments() {
                                                     className="endpoint-link gateway-link"
                                                     style={{ width: '100%', justifyContent: 'flex-start', background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}
                                                 >
-                                                    <span style={{ color: 'var(--accent-green)', marginRight: 6 }}>🚀</span>
                                                     <span style={{ fontSize: 11 }}>{dep.tunnelUrl.replace('https://', '')}</span>
                                                 </a>
                                             ) : (
@@ -703,8 +835,7 @@ export default function Deployments() {
                                                 className="endpoint-link"
                                                 title={`Node: ${c.nodeId} | IP: ${c.ip}`}
                                             >
-                                                <span style={{ color: 'var(--accent-blue)' }}>🔗</span>
-                                                <span>:{c.hostPort}</span>
+                                                <span>Port: {c.hostPort}</span>
                                                 <span className="endpoint-node">{c.nodeId.split('-')[1]}</span>
                                             </a>
                                         ))}
@@ -728,7 +859,7 @@ export default function Deployments() {
                                                 }}
                                                 style={{ border: 'none', background: 'none', color: 'var(--accent-blue)', fontSize: 9, cursor: 'pointer', padding: 0, fontWeight: 'bold' }}
                                             >
-                                                📋 Copy URL
+                                                Copy URL
                                             </button>
                                         </div>
                                         <div style={{ fontFamily: 'monospace', fontSize: 9, color: 'var(--text-secondary)', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: 4 }}>
@@ -744,10 +875,13 @@ export default function Deployments() {
                                     {user?.role !== 'viewer' && (
                                         <>
                                             <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setScaleTarget(dep)}>
-                                                ⚖ Scale
+                                                Scale
+                                            </button>
+                                            <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} title="Edit Environment Variables" onClick={() => setEnvVarTarget(dep)}>
+                                                Variables
                                             </button>
                                             <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} title="Redistribute containers across nodes" onClick={() => handleRebalance(dep._id, dep.name)}>
-                                                🔄 Rebalance
+                                                Rebalance
                                             </button>
                                             <button className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setShareModalDep(dep)}>
                                                 Share
@@ -764,7 +898,7 @@ export default function Deployments() {
                                             title="View Git & Docker Build Logs"
                                             onClick={() => setBuildLogsTarget(dep)}
                                         >
-                                            📋 Logs
+                                            Logs
                                         </button>
                                     )}
                                     {dep.gitRepository && user?.role !== 'viewer' && (
@@ -775,12 +909,12 @@ export default function Deployments() {
                                             onClick={() => handleRedeploy(dep._id, dep.name, dep.gitRepository)}
                                             disabled={dep.status === 'Building'}
                                         >
-                                            ⚡ Re-deploy
+                                            Re-deploy
                                         </button>
                                     )}
                                     {user?.role !== 'viewer' && (
                                         <button className="btn btn-danger btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleDelete(dep._id, dep.name)}>
-                                            🗑
+                                            Delete
                                         </button>
                                     )}
                                 </div>
@@ -808,6 +942,9 @@ export default function Deployments() {
             )}
             {scaleTarget && (
                 <ScaleModal dep={scaleTarget} onClose={() => setScaleTarget(null)} onScale={handleScale} />
+            )}
+            {envVarTarget && (
+                <EnvVarModal dep={envVarTarget} onClose={() => setEnvVarTarget(null)} onSave={handleSaveEnv} />
             )}
             {buildLogsTarget && (
                 <BuildLogsModal dep={buildLogsTarget} onClose={() => setBuildLogsTarget(null)} />

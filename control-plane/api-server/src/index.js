@@ -32,13 +32,15 @@ const workersRouter = require('./routes/workers');
 const systemRouter = require('./routes/system');
 const authRouter = require('./routes/auth');
 const webhooksRouter = require('./routes/webhooks');
-const databasesRouter = require('./routes/databases');
+const settingsRouter = require('./routes/settings');
+// const databasesRouter = require('./routes/databases');
 
 // ── Background services (started after DB connects) ───────────────────────────
 
 const AutoScalerService = require('./services/AutoScalerService');
 const FailureDetector = require('./services/FailureDetector');
 const HealthCheckService = require('./services/HealthCheckService');
+const SchedulerService = require('./services/SchedulerService');
 
 const app = express();
 
@@ -93,7 +95,8 @@ app.use('/api/cluster', clusterRouter);     // Cluster status snapshot + schedul
 app.use('/api/logs', logsRouter);        // Live container log fetching
 app.use('/api/system', systemRouter);    // System utilities (browse, etc.)
 app.use('/api/webhooks', webhooksRouter);  // GitHub webhook listener
-app.use('/api/databases', databasesRouter); // Managed DBs
+app.use('/api/settings', settingsRouter);  // User settings and credentials
+// app.use('/api/databases', databasesRouter); // Managed DBs
 
 // Convenience shortcut: worker agents POST to /api/heartbeat (without the /nodes/ prefix)
 // We forward the request internally to the nodes router's /heartbeat handler
@@ -132,27 +135,8 @@ async function bootstrap() {
         console.log(`\n🚀 KUBEX API Server running on http://localhost:${PORT}`);
         console.log('──────────────────────────────────────────────');
 
-        try {
-            const Node = require('./models/Node');
-            // 1. Force cleanup of any surviving ghost processes from previous run
-            const WorkerService = require('./services/WorkerService');
-            await WorkerService.stopAllWorkers();
-
-            // 3. Check for TRULY active nodes (heartbeat in last 5 seconds)
-            const activeNodeCount = await Node.countDocuments({
-                lastHeartbeat: { $gt: new Date(Date.now() - 5000) }
-            });
-            
-            if (activeNodeCount === 0) {
-                console.log('🌱 Cluster recovery: Spawning fresh 3-worker cluster...');
-                // Sequential spawn to avoid port conflict race condition
-                for (let i = 0; i < 3; i++) {
-                    await WorkerService.spawnWorker();
-                }
-            }
-        } catch (err) {
-            console.error('Failed to auto-spawn initial workers:', err.message);
-        }
+        // Auto-spawning logic removed for Pull Architecture.
+        // Worker agents are now explicitly started via start-worker.ps1 on the user's laptop or cloud.
 
         // Bug 15 fix: start background services INSIDE the listen callback, not after it.
         // app.listen() is asynchronous; calling .start() synchronously after it means
@@ -161,6 +145,7 @@ async function bootstrap() {
         AutoScalerService.start();  // CPU-based autoscaling loop (every 10 s)
         FailureDetector.start();    // Heartbeat timeout / node failure detection (every 5 s)
         HealthCheckService.start(); // Application L7 HTTP Health Checking (every 10 s)
+        SchedulerService.start();   // Centralized assignment loop (every 5 s)
     });
 }
 
@@ -188,6 +173,7 @@ const shutdown = async () => {
     AutoScalerService.stop();
     FailureDetector.stop();
     HealthCheckService.stop();
+    SchedulerService.stop();
     
     try {
         const WorkerService = require('./services/WorkerService');

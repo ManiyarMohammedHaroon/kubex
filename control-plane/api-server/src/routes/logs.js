@@ -120,4 +120,20 @@ router.get('/:deploymentId/:containerId', async (req, res) => {
     }
 });
 
+// ─── POST /api/logs/:deploymentId/:containerId/analyze ───────────────────────
+// Sends the provided logs (in the request body) to the AI service for analysis
+router.post('/:deploymentId/:containerId/analyze', async (req, res) => {
+    try {
+        const { logs } = req.body;
+        if (!logs) return res.status(400).json({ success: false, error: 'Logs are required for analysis.' });
+
+        const AIService = require('../services/AIService');
+        const analysis = await AIService.analyzeLogs(logs);
+
+        res.json({ success: true, data: { analysis } });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;

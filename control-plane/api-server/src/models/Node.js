@@ -36,6 +36,13 @@ const nodeSchema = new mongoose.Schema(
             default: 'Unknown',
         },
 
+        // Identifies whether this node is a local laptop or a dedicated cloud server
+        environment: {
+            type: String,
+            enum: ['local', 'cloud'],
+            default: 'local'
+        },
+
         // Static capacity of the machine (reported by the worker agent).
         capacity: {
             cpu: { type: Number, default: 4 },    // Total CPU cores on the machine
@@ -62,6 +69,10 @@ const nodeSchema = new mongoose.Schema(
         // Process ID (PID) — only populated if the worker was spawned 
         // by this API server instance on the local machine.
         pid: { type: Number, default: null },
+
+        // The user who provisioned this specific worker.
+        // If null, it is considered a global/system node (e.g. auto-registered local laptop).
+        owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     },
     { timestamps: true } // Adds createdAt and updatedAt automatically
 );

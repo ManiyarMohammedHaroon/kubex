@@ -2,95 +2,68 @@
  * @file routes/system.js — System-level utility routes.
  * 
  * Provides native OS integration for the KUBEX dashboard, such as
- * opening a folder browser dialog on the server's machine.
+ * managing the saved images vault.
  */
 const router = require('express').Router();
-const { exec } = require('child_process');
+const auth = require('../middleware/auth');
+const Image = require('../models/Image');
 
-
+// Protect all routes in this file
+router.use(auth);
 
 /**
- * GET /api/system/images - Returns a list of all local Docker images.
+ * GET /api/system/images - Returns a list of all saved images for the user.
  */
-router.get('/images', (req, res) => {
-    // Using {{json .}} is the most robust way to get machine-readable output from Docker.
-    exec(`docker images --format "{{json .}}"`, (error, stdout, stderr) => {
-        if (error) {
-            console.error('[API] Docker Images Error:', stderr);
-            return res.status(500).json({ success: false, error: 'Failed to fetch images' });
-        }
+router.get('/images', async (req, res) => {
+    try {
+        const dbImages = await Image.find({ owner: req.user._id }).sort({ createdAt: -1 });
         
-        // Handle Windows line endings (\r\n) by splitting with a regex
-        const lines = stdout.trim().split(/\r?\n/).filter(l => l.trim());
-        const images = lines.map(line => {
-            try {
-                const raw = JSON.parse(line);
-                // Docker's JSON keys are capitalized (Repository, Tag, etc.)
-                return {
-                    repo: raw.Repository || raw.repo || 'unknown',
-                    tag: raw.Tag || raw.tag || 'latest',
-                    id: raw.ID || raw.id || 'unknown',
-                    created: raw.CreatedSince || raw.created || 'recently',
-                    size: raw.Size || raw.size || '0 B'
-                };
-            } catch (e) {
-                console.error('[API] Failed to parse image line:', line, e.message);
-                return null;
-            }
-        }).filter(img => img && img.repo !== '<none>');
+        const images = dbImages.map(img => ({
+            repo: img.repo,
+            tag: img.tag,
+            id: img._id.toString(),
+            created: img.createdAt ? new Date(img.createdAt).toLocaleDateString() : 'recently',
+            size: img.size
+        }));
 
-        console.log(`[API] Found ${images.length} Docker images`);
+        console.log(`[API] Found ${images.length} saved images for user ${req.user._id}`);
         res.json({ success: true, images });
-    });
+    } catch (err) {
+        console.error('[API] GET /system/images Error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch saved images' });
+    }
 });
 
 /**
- * DELETE /api/system/images/:id — Deletes a specific image by ID.
- * Automatically cleans up any "ghost" containers using this image first.
+ * DELETE /api/system/images/:id — Deletes a specific image from the database.
  */
-router.delete('/images/:id', (req, res) => {
+router.delete('/images/:id', async (req, res) => {
     const { id } = req.params;
-
-    // 1. Find and remove all containers (running or stopped) using this image ID
-    // This prevents the "Image is in use" error.
-    exec(`docker ps -a -q --filter "ancestor=${id}"`, (psErr, psStdout) => {
-        const containerIds = psStdout.trim().split(/\s+/).filter(cid => cid.length > 0);
-        
-        const deleteImage = () => {
-            exec(`docker rmi -f ${id}`, (error, stdout, stderr) => {
-                if (error) {
-                    console.error('[API] Docker RMI Error:', stderr);
-                    const cleanError = stderr.split(':').pop().trim() || 'Image could not be deleted';
-                    return res.status(500).json({ success: false, error: cleanError });
-                }
-                res.json({ success: true, message: 'Image and its ghost containers deleted' });
-            });
-        };
-
-        if (containerIds.length > 0) {
-            console.log(`[API] Cleaning up ${containerIds.length} ghost containers for image ${id}...`);
-            exec(`docker rm -f ${containerIds.join(' ')}`, () => {
-                deleteImage();
-            });
-        } else {
-            deleteImage();
+    try {
+        const deleted = await Image.findOneAndDelete({ _id: id, owner: req.user._id });
+        if (!deleted) {
+            return res.status(404).json({ success: false, error: 'Image not found or not owned by you' });
         }
-    });
+        console.log(`[API] Deleted image ${id} for user ${req.user._id}`);
+        res.json({ success: true, message: 'Image successfully deleted from database' });
+    } catch (err) {
+        console.error('[API] DELETE /system/images Error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to delete image' });
+    }
 });
 
 /**
- * POST /api/system/images/prune — Removes all dangling/unused images AND stopped containers.
+ * POST /api/system/images/prune — Removes all saved images for the user.
  */
-router.post('/images/prune', (req, res) => {
-    // We prune containers first, then images to maximize cleanup
-    exec(`docker container prune -f && docker image prune -f`, (error, stdout, stderr) => {
-        if (error) {
-            return res.status(500).json({ success: false, error: 'Prune failed' });
-        }
-        res.json({ success: true, message: 'Unused images and ghost containers pruned' });
-    });
+router.post('/images/prune', async (req, res) => {
+    try {
+        const result = await Image.deleteMany({ owner: req.user._id });
+        console.log(`[API] Pruned ${result.deletedCount} images for user ${req.user._id}`);
+        res.json({ success: true, message: 'All saved images pruned from your database' });
+    } catch (err) {
+        console.error('[API] POST /system/images/prune Error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to prune images' });
+    }
 });
-
-
 
 module.exports = router;

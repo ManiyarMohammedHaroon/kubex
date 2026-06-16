@@ -32,7 +32,8 @@ const buildDeploymentQuery = (user) => {
 // Nodes themselves are cluster infrastructure and visible to all authenticated users.
 router.get('/', auth, async (req, res) => {
     try {
-        const nodes = await Node.find().sort({ nodeId: 1 });
+        const query = req.user.role === 'admin' ? {} : { owner: req.user._id };
+        const nodes = await Node.find(query).sort({ nodeId: 1 });
         res.json({ success: true, data: nodes });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -82,7 +83,8 @@ router.get('/events/list', auth, async (req, res) => {
 // owned by the current user that have containers on this node.
 router.get('/:nodeId', auth, async (req, res) => {
     try {
-        const node = await Node.findOne({ nodeId: req.params.nodeId });
+        const query = req.user.role === 'admin' ? { nodeId: req.params.nodeId } : { nodeId: req.params.nodeId, owner: req.user._id };
+        const node = await Node.findOne(query);
         if (!node) return res.status(404).json({ success: false, error: 'Node not found' });
 
         // Look up only the current user's deployments that have containers on this node
@@ -138,8 +140,22 @@ router.get('/:nodeId/tasks', async (req, res) => {
         // Return all deployments that need to be run, built, or stopped.
         // For local auto-tunneling, we assume 1 worker node, so we just return ALL deployments.
         // The worker will reconcile them locally.
-        const deployments = await Deployment.find({ status: { $ne: 'Terminating' } });
-        res.json({ success: true, data: deployments });
+        const deployments = await Deployment.find({ status: { $ne: 'Terminating' } }).populate('owner', 'dockerHubUsername dockerHubToken');
+        
+        // Filter the tasks by overriding desiredReplicas with this node's specific quota.
+        // If there's no quota yet (Scheduler hasn't run), default to 0 to prevent over-scaling.
+        const tasks = deployments.map(dep => {
+            const assignedCount = dep.nodeAssignments?.get(req.params.nodeId) || 0;
+            const obj = dep.toObject();
+            return {
+                ...obj,
+                desiredReplicas: assignedCount,
+                dockerHubUsername: dep.owner?.dockerHubUsername || dep.dockerHubUsername || '',
+                dockerHubToken: dep.owner?.dockerHubToken || ''
+            };
+        });
+
+        res.json({ success: true, data: tasks });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -162,7 +178,7 @@ router.get('/:nodeId/tasks', async (req, res) => {
 // Optional body: { metrics, containers, capacity }
 router.post('/heartbeat', async (req, res) => {
     try {
-        const { nodeId, address, metrics, containers, capacity } = req.body;
+        const { nodeId, address, metrics, containers, capacity, environment } = req.body;
         if (!nodeId || !address) {
             return res.status(400).json({ success: false, error: 'nodeId and address required' });
         }
@@ -174,37 +190,35 @@ router.post('/heartbeat', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Unauthorized: KUBEX_TOKEN required' });
         }
 
-        // Verify the token matches the node record provisioned in the DB
+        // Upsert the node: if it doesn't exist, create it with this token.
+        // If it exists, the token MUST match or we reject it.
         const existingNode = await Node.findOne({ nodeId });
-        if (!existingNode) {
-            return res.status(404).json({ success: false, error: 'Node not provisioned. Add node from KUBEX dashboard first.' });
-        }
-
-        if (existingNode.token !== token) {
+        
+        if (existingNode && existingNode.token !== token) {
             return res.status(403).json({ success: false, error: 'Forbidden: Invalid KUBEX_TOKEN for this node' });
         }
 
-        // Use an "Upsert" strategy: Update the node if it exists, CREATE it if it doesn't.
-        // This prevents the "Zombie Shutdown" bug where healthy workers were killed 
-        // because they checked in before the DB record was fully ready.
+        // Inject the container count into the metrics object so the frontend UI can display it
+        if (metrics && containers) {
+            metrics.containerCount = containers.length;
+        }
+
+        // Update the node's status to Ready, record live metrics, and set the token
         const node = await Node.findOneAndUpdate(
             { nodeId },
             {
                 $set: {
                     address,
                     status: 'Ready',
-                    metrics: {
-                        cpuUsage: metrics?.cpuUsage ?? 0,
-                        memUsage: metrics?.memUsage ?? 0,
-                        containerCount: containers?.length ?? 0,
-                    },
-                    containers: containers || [],
                     lastHeartbeat: new Date(),
-                    ...(capacity ? { capacity } : {}),
-                },
-                $setOnInsert: { createdAt: new Date() } // Set createdAt only on new node
+                    metrics: metrics || {},
+                    containers: containers || [],
+                    capacity: capacity || { cpu: 2, memory: 2048 },
+                    token: token,
+                    environment: environment || 'local'
+                }
             },
-            { new: true, upsert: true } // upsert: true is the key fix here
+            { new: true, upsert: true }
         );
 
         res.json({ success: true, data: node });
@@ -250,7 +264,8 @@ router.delete('/:nodeId', auth, async (req, res) => {
             return res.status(403).json({ success: false, error: 'Permission denied. Viewers cannot delete nodes.' });
         }
 
-        const result = await Node.findOneAndDelete({ nodeId: req.params.nodeId });
+        const query = req.user.role === 'admin' ? { nodeId: req.params.nodeId } : { nodeId: req.params.nodeId, owner: req.user._id };
+        const result = await Node.findOneAndDelete(query);
         if (!result) {
             return res.status(404).json({ success: false, error: 'Node not found' });
         }

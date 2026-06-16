@@ -13,8 +13,8 @@ const axios = require('axios');
 const Node = require('../models/Node');
 const Deployment = require('../models/Deployment');
 const Event = require('../models/Event');
-const DockerService = require('./DockerService');
-const LoadBalancer = require('./LoadBalancer');
+// const DockerService = require('./DockerService');
+// const LoadBalancer = require('./LoadBalancer');
 
 let healthTimer = null;
 
@@ -85,9 +85,19 @@ async function performHealthChecks() {
                             dep.name
                         );
 
-                        // Kill it. The Reconciler will replace it.
-                        await DockerService.stopAndRemoveContainer(container.containerId).catch(() => {});
-                        LoadBalancer.removeEndpoint(dep.name, container.ip);
+                        // Send a stop command to the worker agent managing this container.
+                        // The worker agent exposes a POST /commands/stop endpoint for this exact purpose.
+                        // Once the container is killed, the Reconciler loop on the worker will detect
+                        // the crash and automatically spawn a replacement.
+                        if (nodeAddress) {
+                            try {
+                                await axios.post(`${nodeAddress}/commands/stop`, {
+                                    containerId: container.containerId
+                                }, { timeout: 5000 });
+                            } catch (killErr) {
+                                console.error(`[HealthCheck] Failed to send stop command to worker: ${killErr.message}`);
+                            }
+                        }
                         
                         failureCounts.delete(container.containerId);
                     }

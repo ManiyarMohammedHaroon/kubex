@@ -45,6 +45,7 @@ services:
       CPU_SCALE_UP_THRESHOLD: 80
       CPU_SCALE_DOWN_THRESHOLD: 20
       NODE_ENV: production
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -65,3 +66,13 @@ services:
       - kubex-net
     depends_on:
       - api-server
+
+  # ─── Worker Agent Base Image ───────────────────────────────────────────────
+  # We define this so docker-compose builds the image 'kubex-worker-agent:latest'
+  # The api-server will dynamically spawn containers from this image.
+  worker-base:
+    build:
+      context: ./worker-agent
+      dockerfile: Dockerfile
+    image: kubex-worker-agent:latest
+    profiles: ["build-only"]

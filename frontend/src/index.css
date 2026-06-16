@@ -701,6 +701,12 @@ select:focus {
   gap: 24px;
 }
 
+.deployments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 24px;
+}
+
 /* Better Resource Bars */
 .resource-bar {
   background: #e9ecef;
@@ -744,8 +750,10 @@ select:focus {
 
 /* Terminal Log Panels */
 .logs-container {
-  background: #f8f9fa;
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   padding: 16px;
   font-family: "JetBrains Mono", "Fira Code", monospace;
@@ -756,6 +764,7 @@ select:focus {
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
 }
 
 .logs-container::-webkit-scrollbar {

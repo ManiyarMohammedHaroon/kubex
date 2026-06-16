@@ -19,7 +19,7 @@
  *   interval can be stopped/started by the toggle without reloading the whole component.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { getDeployments, getLogs } from '../api/client';
+import { getDeployments, getLogs, analyzeLogs } from '../api/client';
 
 export default function Logs() {
     const [deployments, setDeployments] = useState([]);  // All available deployments (for the dropdown)
@@ -27,6 +27,24 @@ export default function Logs() {
     const [logs, setLogs] = useState(null); // Log response: { deployment, containers[] } or { error }
     const [loading, setLoading] = useState(false);
     const [autoRefresh, setAutoRefresh] = useState(false); // Toggle: true = poll every 4 s
+    const [analyzingIds, setAnalyzingIds] = useState(new Set());
+    const [aiAnalysis, setAiAnalysis] = useState({});
+
+    const handleAnalyze = async (containerId, logText) => {
+        setAnalyzingIds(prev => new Set(prev).add(containerId));
+        try {
+            const res = await analyzeLogs(selectedId, containerId, logText);
+            setAiAnalysis(prev => ({ ...prev, [containerId]: res.data.data.analysis }));
+        } catch (err) {
+            setAiAnalysis(prev => ({ ...prev, [containerId]: `Error analyzing logs: ${err.message}` }));
+        } finally {
+            setAnalyzingIds(prev => {
+                const next = new Set(prev);
+                next.delete(containerId);
+                return next;
+            });
+        }
+    };
 
     // ── Step 1: Load the deployment list once on mount ─────────────────────────
     // We don't need to re-poll this — deployments are long-lived.
@@ -111,7 +129,7 @@ export default function Logs() {
             {/* Prompt: no deployment selected yet (should be brief — auto-selects on load) */}
             {!logs && !loading && (
                 <div className="empty-state">
-                    <div className="empty-icon">📋</div>
+                    <div className="empty-icon" style={{ opacity: 0.5 }}>Logs</div>
                     <h3>Select a deployment to view logs</h3>
                 </div>
             )}
@@ -119,7 +137,7 @@ export default function Logs() {
             {/* No containers running for the selected deployment */}
             {logs?.containers?.length === 0 && (
                 <div className="empty-state">
-                    <div className="empty-icon">📭</div>
+                    <div className="empty-icon" style={{ opacity: 0.5 }}>Empty</div>
                     <h3>No running containers</h3>
                     <p>No containers are currently running for this deployment</p>
                 </div>
@@ -156,10 +174,30 @@ export default function Logs() {
                                     {container.containerId}
                                 </code>
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
-                                NODE ID: <span style={{ color: 'var(--text-primary)' }}>{container.nodeId}</span>
+                            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
+                                    NODE ID: <span style={{ color: 'var(--text-primary)' }}>{container.nodeId}</span>
+                                </div>
+                                <button 
+                                    className="btn btn-secondary" 
+                                    style={{ fontSize: 11, padding: '4px 8px', background: 'var(--bg-glass)', border: '1px solid var(--accent-magenta)', color: 'var(--accent-magenta)' }}
+                                    disabled={analyzingIds.has(container.containerId)}
+                                    onClick={() => handleAnalyze(container.containerId, container.logs)}
+                                >
+                                    {analyzingIds.has(container.containerId) ? <span className="spinner" style={{width: 12, height: 12}} /> : 'Analyze with AI'}
+                                </button>
                             </div>
                         </div>
+
+                        {/* AI Analysis Result */}
+                        {aiAnalysis[container.containerId] && (
+                            <div style={{ padding: '12px 16px', background: 'rgba(238, 43, 163, 0.05)', borderBottom: '1px solid rgba(238, 43, 163, 0.2)' }}>
+                                <h4 style={{ margin: '0 0 8px 0', fontSize: 12, color: 'var(--accent-magenta)' }}>AI Analysis</h4>
+                                <div style={{ fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+                                    {aiAnalysis[container.containerId]}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Terminal Surface */}
                         <div style={{ padding: 16 }}>

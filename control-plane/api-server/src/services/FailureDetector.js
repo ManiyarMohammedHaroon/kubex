@@ -47,10 +47,15 @@ async function detectFailures() {
         const cutoff = new Date(Date.now() - timeout);
 
         // ── Dead Node Detection ────────────────────────────────────────────────
-        // Find nodes that are NOT already marked NotReady but whose heartbeat is stale
+        // Find nodes that are NOT already marked NotReady but whose heartbeat is stale.
+        // We use $or to handle brand new nodes where lastHeartbeat is null (checking createdAt instead)
+        // because MongoDB BSON comparison treats null < Date as true!
         const staleNodes = await Node.find({
-            status: { $ne: 'NotReady' },    // Only ones we haven't flagged yet
-            lastHeartbeat: { $lt: cutoff },        // Heartbeat is too old
+            status: { $ne: 'NotReady' },
+            $or: [
+                { lastHeartbeat: { $ne: null, $lt: cutoff } },
+                { lastHeartbeat: null, createdAt: { $lt: cutoff } }
+            ]
         });
 
         for (const node of staleNodes) {
@@ -86,6 +91,7 @@ async function detectFailures() {
                             containers: survivingContainers,
                             actualReplicas: survivingContainers.length,
                             status: 'Degraded',
+                            lastError: 'Node lost. Waiting for worker agent...'
                         }
                     });
 
@@ -128,7 +134,10 @@ async function detectFailures() {
         
         const nodesToPurge = await Node.find({
             status: 'NotReady',
-            lastHeartbeat: { $lt: purgeCutoff }
+            $or: [
+                { lastHeartbeat: { $ne: null, $lt: purgeCutoff } },
+                { lastHeartbeat: null, createdAt: { $lt: purgeCutoff } }
+            ]
         });
 
         for (const node of nodesToPurge) {

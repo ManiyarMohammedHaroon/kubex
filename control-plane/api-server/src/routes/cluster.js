@@ -34,12 +34,14 @@ router.get('/status', auth, async (req, res) => {
     try {
         const query = req.user.role === 'viewer'
             ? { viewers: req.user._id }
-            : { owner: req.user._id };
+            : (req.user.role === 'admin' ? {} : { owner: req.user._id });
 
-        // Fetch scoped deployments and all nodes in parallel to minimize latency
+        const nodeQuery = req.user.role === 'admin' ? {} : { owner: req.user._id };
+
+        // Fetch scoped deployments and scoped nodes in parallel to minimize latency
         const [deployments, nodes] = await Promise.all([
             Deployment.find(query),
-            Node.find(),
+            Node.find(nodeQuery),
         ]);
 
         // ── Deployment aggregates ──────────────────────────────────────────
