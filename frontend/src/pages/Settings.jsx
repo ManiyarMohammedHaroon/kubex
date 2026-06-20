@@ -1,15 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-// Since we don't have a specific settings API client wrapper yet, we'll use raw axios with the token
-const getAuthHeaders = () => {
-    const token = localStorage.getItem('kubex_token');
-    return { Authorization: `Bearer ${token}` };
-};
-
-const API_URL = process.env.NODE_ENV === 'production' 
-    ? 'https://your-kubex.onrender.com' // Should ideally use config
-    : 'http://localhost:3001';
+import API from '../api/client';
 
 export default function Settings() {
     const [form, setForm] = useState({
@@ -29,7 +19,7 @@ export default function Settings() {
     const fetchSettings = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${API_URL}/api/settings/dockerhub`, { headers: getAuthHeaders() });
+            const res = await API.get(`/settings/dockerhub`);
             setForm(prev => ({ ...prev, username: res.data.username || '' }));
             setHasToken(res.data.hasToken);
         } catch (err) {
@@ -47,10 +37,10 @@ export default function Settings() {
         setSuccessMsg('');
 
         try {
-            await axios.put(`${API_URL}/api/settings/dockerhub`, {
+            await API.put(`/settings/dockerhub`, {
                 username: form.username,
                 token: form.token
-            }, { headers: getAuthHeaders() });
+            });
             
             setSuccessMsg('Docker Hub credentials securely saved.');
             setForm(prev => ({ ...prev, token: '' })); // clear the input field
