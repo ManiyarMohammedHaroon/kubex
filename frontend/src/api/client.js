@@ -18,7 +18,7 @@ import axios from 'axios';
 // Shared Axios instance used by all API calls in this application
 const API = axios.create({
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
-    timeout: 8000, // 8 s timeout — prevents the UI from hanging indefinitely
+    timeout: 60000, // 60s timeout to accommodate Render's free tier 50s cold start
 });
 
 // Request interceptor: Automatically attach JWT token to all API requests
