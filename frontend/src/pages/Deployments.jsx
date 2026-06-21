@@ -74,6 +74,7 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
         staticHostPort: '', envText: '',
         gitRepository: '',
         gitBranch: 'main',
+        gitSubfolder: '',
         gitToken: '',
         autoDeploy: true,
         dockerHubUsername: localStorage.getItem('kubex_dockerhub_username') || '',
@@ -113,6 +114,7 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
                 envVars,
                 gitRepository: form.gitRepository,
                 gitBranch: form.gitBranch,
+                gitSubfolder: form.gitSubfolder,
                 gitToken: form.gitToken,
                 autoDeploy: form.autoDeploy,
                 dockerHubUsername: form.dockerHubUsername,
@@ -191,6 +193,17 @@ function CreateModal({ onClose, onCreate, prefilledImage = '', onRefresh }) {
                                 required 
                             />
                         </div>
+                        <div className="form-group">
+                            <label>Root Directory</label>
+                            <input 
+                                value={form.gitSubfolder} 
+                                onChange={e => setForm(p => ({ ...p, gitSubfolder: e.target.value }))}
+                                placeholder="e.g. Backend (Optional)" 
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-row">
                         <div className="form-group">
                             <label>Personal Access Token (PAT) <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>(Optional for private)</span></label>
                             <input 
