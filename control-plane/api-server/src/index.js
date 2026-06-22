@@ -110,6 +110,11 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'kubex-api-server', ts: new Date() });
 });
 
+// Root endpoint for Render's default health check
+app.get('/', (req, res) => {
+    res.send('KUBEX API Server is running');
+});
+
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 // Catches any error passed to next(err) from route handlers.
 // Returns a consistent JSON error shape so the frontend can handle it uniformly.
