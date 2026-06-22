@@ -140,7 +140,7 @@ router.post('/', async (req, res) => {
             staticHostPort = '', containerPort = 80,
             gitRepository = '', gitBranch = 'main', gitToken = '', autoDeploy = true,
             dockerHubUsername = '', healthCheck = { enabled: false, path: '/health', maxRetries: 3 },
-            environment = 'local'
+            environment = 'local', gitSubfolder = ''
         } = req.body;
 
         if (autoscalingEnabled && cpuThresholdUp <= cpuThresholdDown) {
@@ -190,7 +190,7 @@ router.post('/', async (req, res) => {
         const backendEntry = scanEntries.find(e => e.toLowerCase() === 'backend' && fs.statSync(path.join(tempScanPath, e)).isDirectory());
         const frontendExists = !!frontendEntry;
         const backendExists = !!backendEntry;
-        const isMonorepo = frontendExists && backendExists;
+        const isMonorepo = !gitSubfolder && frontendExists && backendExists;
         // Store the REAL folder names (preserving original casing from the repo)
         const frontendFolder = frontendEntry || 'frontend';
         const backendFolder = backendEntry || 'backend';
@@ -308,7 +308,7 @@ router.post('/', async (req, res) => {
                 owner: req.user._id,
                 viewers: req.body.viewers || [],
                 gitRepository, gitBranch, gitToken, webhookSecret, autoDeploy,
-                gitSubfolder: '',
+                gitSubfolder: gitSubfolder,
                 dockerHubUsername, healthCheck,
                 environment
             });
