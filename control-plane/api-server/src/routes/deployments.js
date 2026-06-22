@@ -172,9 +172,9 @@ router.post('/', async (req, res) => {
 
         console.log(`[API Scanner] Running shallow clone scan for "${gitRepository}"...`);
         try {
-            const { execSync } = require('child_process');
-            execSync(`git -c credential.helper= -c core.fsmonitor=false clone --depth 1 -b ${gitBranch} "${cloneUrl}" "${tempScanPath}"`, {
-                stdio: 'ignore',
+            const util = require('util');
+            const execAsync = util.promisify(require('child_process').exec);
+            await execAsync(`git -c credential.helper= -c core.fsmonitor=false clone --depth 1 -b ${gitBranch} "${cloneUrl}" "${tempScanPath}"`, {
                 env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
                 windowsHide: true
             });
